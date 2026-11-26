@@ -52,7 +52,8 @@ public static class CliApp
                 "select" => await SelectAsync(rest, cancellationToken),
                 "volume" or "gain" => await VolumeAsync(rest, cancellationToken),
                 "speed" => await SpeedAsync(rest, cancellationToken),
-                "update" => await UpdateAsync(rest, cancellationToken),
+                "port" => await PortAsync(rest, cancellationToken),
+                "format" => await FormatAsync(rest, cancellationToken),
                 "logon" => await LogonAsync(rest, cancellationToken),
                 "uninstall" => await UninstallAsync(rest, cancellationToken),
                 _ => Unknown(command)
@@ -80,8 +81,8 @@ Usage:
   winTTSas list [--json]
   winTTSas select <index|name|slug>
   winTTSas speed [0.25-4.0]
-  winTTSas update port [port]
-  winTTSas update format [mp3|wav|opus|aac|flac|pcm]
+  winTTSas port [port]
+  winTTSas format [mp3|wav|opus|aac|flac|pcm]
   winTTSas logon on|off
   winTTSas uninstall [--yes] [--keep-data] [--remove-adapter]
   winTTSas help
@@ -94,7 +95,7 @@ OpenAI clients:
 
 Notes:
   - start runs a background server; --foreground keeps it in this console.
-  - update format applies live; update port restarts the server.
+  - format applies live; port restarts the server.
   - logon uses HKCU Run and starts the hidden server at login.
 """);
         return 0;
@@ -590,25 +591,7 @@ Notes:
         return 0;
     }
 
-    private static async Task<int> UpdateAsync(
-        string[] args,
-        CancellationToken cancellationToken)
-    {
-        if (args.Length == 0)
-        {
-            Console.Error.WriteLine("usage: winTTSas update <port|format> [value]");
-            return 1;
-        }
-
-        return args[0].ToLowerInvariant() switch
-        {
-            "port" => await UpdatePortAsync(args[1..], cancellationToken),
-            "format" => await UpdateFormatAsync(args[1..], cancellationToken),
-            _ => Unknown("update " + args[0])
-        };
-    }
-
-    private static async Task<int> UpdatePortAsync(
+    private static async Task<int> PortAsync(
         string[] args,
         CancellationToken cancellationToken)
     {
@@ -658,7 +641,7 @@ Notes:
         return wasRunning ? await StartAsync([], cancellationToken) : 0;
     }
 
-    private static async Task<int> UpdateFormatAsync(
+    private static async Task<int> FormatAsync(
         string[] args,
         CancellationToken cancellationToken)
     {

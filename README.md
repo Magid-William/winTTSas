@@ -140,13 +140,13 @@ Audio is normalized to 24 kHz mono. Responses include `X-WinTTSas-Voice`,
 | `winTTSas select <index, name, or slug>` | Set default voice; live reload |
 | `winTTSas volume [dB]` | Set global gain (-24 to +24 dB); live reload |
 | `winTTSas speed [factor]` | Set global speed; live reload |
-| `winTTSas update port [port]` | Set port; restarts if running |
-| `winTTSas update format [format]` | Set default format; live reload, no restart |
+| `winTTSas port [port]` | Set port; restarts if running |
+| `winTTSas format [format]` | Set default format; live reload, no restart |
 | `winTTSas logon on / off` | Hidden per-user autostart via HKCU Run |
 | `winTTSas uninstall` | Stop, remove logon, delete app data |
 | `winTTSas help` | Usage |
 
-`update format` accepts `mp3`, `wav`, `opus`, `aac`, `flac`, or `pcm`.
+`format` accepts `mp3`, `wav`, `opus`, `aac`, `flac`, or `pcm`.
 
 `volume` applies a global gain during transcoding with a lookahead limiter
 (`volume=<dB>,alimiter=limit=0.84`). The raw WAV cache is not modified, so
