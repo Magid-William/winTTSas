@@ -8,7 +8,7 @@ app -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
      -> NaturalVoiceSAPIAdapter -> Narrator natural voices
 ```
 
-Working v0.1.1. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
+Working v0.1.2. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 
 ## Table of contents
 
@@ -132,7 +132,7 @@ cd C:\Tools\winTTSas
 the effective settings:
 
 ```
-winTTSas 0.1.1
+winTTSas 0.1.2
 state:    running (pid 14816)
 base URL: http://127.0.0.1:5178/v1
 voice:    Microsoft Andrew

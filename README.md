@@ -1,5 +1,7 @@
 # winTTSas
 
+**Pronunciation:** win - tee tee - es ae es.
+
 Local, OpenAI-compatible text-to-speech for Windows. It serves the voices
 already installed on the machine through `/v1/audio/speech`, so any OpenAI TTS
 client can use them without cloud calls, accounts, or API keys.
@@ -8,6 +10,16 @@ client can use them without cloud calls, accounts, or API keys.
 client -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
                                             -> NaturalVoiceSAPIAdapter -> Narrator
 ```
+
+## Table of contents
+
+- [Introduction](#introduction)
+- [Getting started](#getting-started)
+  - [CLI defaults vs API overrides](#cli-defaults-vs-api-overrides)
+- [Flags](#flags)
+  - [Server and CLI](#server-and-cli)
+  - [sample](#sample)
+- [Licenses](#licenses)
 
 ## Introduction
 
