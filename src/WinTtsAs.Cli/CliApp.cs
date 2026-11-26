@@ -227,6 +227,8 @@ Notes:
         double? gainOverride = null;
         int? levelOverride = null;
         string? voiceQuery = null;
+        string? savePath = null;
+        string? formatOverride = null;
         var parseOptions = true;
 
         for (var i = 0; i < args.Length; i++)
@@ -326,6 +328,32 @@ Notes:
                 continue;
             }
 
+            if (TryReadOption(args, ref i, "--save", out var saveValue) ||
+                TryReadOption(args, ref i, "-o", out saveValue))
+            {
+                if (string.IsNullOrWhiteSpace(saveValue))
+                {
+                    return SampleUsageError("--save <path>");
+                }
+
+                savePath = saveValue;
+                continue;
+            }
+
+            if (TryReadOption(args, ref i, "--format", out var formatValue))
+            {
+                if (string.IsNullOrWhiteSpace(formatValue) ||
+                    !AudioFormats.IsSupported(formatValue))
+                {
+                    return SampleUsageError(
+                        "--format <mp3|wav|opus|aac|flac|pcm>",
+                        $"unsupported format: {formatValue}");
+                }
+
+                formatOverride = AudioFormats.Normalize(formatValue);
+                continue;
+            }
+
             if (arg.StartsWith("-", StringComparison.Ordinal))
             {
                 return SampleUsageError(null, $"unknown option: {arg}");
@@ -336,6 +364,16 @@ Notes:
 
         var config = ConfigStore.Load();
         var catalog = VoiceCatalog.Load();
+
+        if (formatOverride is not null && savePath is null)
+        {
+            return SampleUsageError(null, "--format requires --save.");
+        }
+
+        if (deviceIndex is not null && savePath is not null)
+        {
+            return SampleUsageError(null, "--device cannot be used with --save.");
+        }
 
         VoiceDescriptor? voice;
         if (string.IsNullOrWhiteSpace(voiceQuery))
@@ -369,7 +407,24 @@ Notes:
             return 1;
         }
 
-        if (deviceIndex is not null)
+        string? outputPath = null;
+        string? outputFormat = null;
+        if (savePath is not null)
+        {
+            outputPath = Path.GetFullPath(savePath);
+            var extension = Path.GetExtension(outputPath).TrimStart('.');
+            outputFormat = formatOverride ??
+                (AudioFormats.IsSupported(extension)
+                    ? AudioFormats.Normalize(extension)
+                    : config.DefaultFormat);
+        }
+
+        if (outputPath is not null)
+        {
+            Console.WriteLine($"file:   {outputPath}");
+            Console.WriteLine($"format: {outputFormat}");
+        }
+        else if (deviceIndex is not null)
         {
             var devices = WaveOutPlayer.GetDevices();
             var selectedDevice = devices.FirstOrDefault(d => d.Index == deviceIndex.Value);
@@ -411,13 +466,68 @@ Notes:
         Console.WriteLine($"level:  {level}");
         Console.WriteLine($"text:   {text}");
         Console.WriteLine();
-        Console.WriteLine("speaking...");
+        Console.WriteLine(outputPath is null ? "speaking..." : "saving...");
 
         var wav = SpeechSampler.SynthesizeWav(
             voice.Name,
             text,
             rate,
             level);
+
+        if (outputPath is not null)
+        {
+            var saveFormat = outputFormat ?? config.DefaultFormat;
+            var needsFfmpeg = saveFormat != "wav" || Math.Abs(gainDb) >= 0.05;
+            byte[] audio;
+
+            if (!needsFfmpeg)
+            {
+                audio = wav;
+            }
+            else
+            {
+                var ffmpeg = new FfmpegTranscoder(config.FfmpegPath, config.Mp3Bitrate);
+                if (!ffmpeg.IsAvailable)
+                {
+                    Console.Error.WriteLine(
+                        $"error: ffmpeg is required for {saveFormat} or non-zero gain.");
+                    return 1;
+                }
+
+                try
+                {
+                    audio = await ffmpeg.ToFormatAsync(
+                        wav,
+                        saveFormat,
+                        gainDb,
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine("error: audio conversion failed: " + ex.Message);
+                    return 1;
+                }
+            }
+
+            try
+            {
+                var parent = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrEmpty(parent))
+                {
+                    Directory.CreateDirectory(parent);
+                }
+
+                await File.WriteAllBytesAsync(outputPath, audio, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"error: could not write {outputPath}: {ex.Message}");
+                return 1;
+            }
+
+            Console.WriteLine($"saved:  {outputPath} ({audio.Length:N0} bytes)");
+            return 0;
+        }
 
         if (Math.Abs(gainDb) >= 0.05)
         {
@@ -524,6 +634,8 @@ Options:
   --volume <dB>            Override gain in dB (alias: --gain)
   --level <0-100>          Override SAPI volume
   --voice <index|name|slug>  Select a voice
+  --save <path>            Write audio to a file instead of playing (alias: -o)
+  --format <format>        Output format for --save; inferred from the extension
   --device <index>         Play on a specific output device
   --devices                List audio output devices
   --help                   Show this help

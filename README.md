@@ -206,7 +206,8 @@ winTTSas --version
 
 ### `sample`
 
-`sample` never changes config. Flags may appear before or after the text and
+`sample` plays through the local sound card by default, or writes a file with
+`--save`; it never changes config. Flags may appear before or after the text and
 also accept `--flag=value`.
 
 | Flag | Meaning |
@@ -216,6 +217,8 @@ also accept `--flag=value`.
 | `--gain <dB>` | Alias for `--volume` |
 | `--level <0-100>` | SAPI volume, separate from gain |
 | `--voice <index\|name\|slug>` | Strict voice selection |
+| `--save <path>` | Write audio to a file instead of playing (alias `-o`) |
+| `--format <format>` | Output format for `--save`; inferred from the extension |
 | `--device <n>` | Output device index |
 | `--devices` | List audio outputs and exit |
 | `--help` | Show sample usage |
@@ -234,6 +237,14 @@ winTTSas sample --devices
 winTTSas sample --help
 winTTSas sample -- "--dashes are spoken as text"
 winTTSas sample --speed=2 --gain=+2 "Equals syntax."
+
+# Save instead of play; format comes from the extension
+winTTSas sample "Hello" --save hello.mp3
+winTTSas sample "Hello" --save hello.wav
+winTTSas sample --voice andrew --speed 1.2 --volume +3 --save hello.flac
+
+# Force a format regardless of the extension
+winTTSas sample "Hello" --save output.bin --format mp3
 ```
 
 ## Licenses

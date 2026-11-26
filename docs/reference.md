@@ -8,7 +8,7 @@ app -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
      -> NaturalVoiceSAPIAdapter -> Narrator natural voices
 ```
 
-Working v0.1.2. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
+Working v0.2.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 
 ## Table of contents
 
@@ -132,7 +132,7 @@ cd C:\Tools\winTTSas
 the effective settings:
 
 ```
-winTTSas 0.1.2
+winTTSas 0.2.0
 state:    running (pid 14816)
 base URL: http://127.0.0.1:5178/v1
 voice:    Microsoft Andrew
@@ -322,8 +322,8 @@ makes even WAV output go through ffmpeg.
 
 ### Sample playback
 
-`sample` speaks through the local sound card and never changes config. Values
-resolve as `flag -> config -> built-in`.
+`sample` plays through the local sound card, or writes a file with `--save`,
+and never changes config. Values resolve as `flag -> config -> built-in`.
 
 | Option | Meaning |
 |---|---|
@@ -331,6 +331,8 @@ resolve as `flag -> config -> built-in`.
 | `--volume <dB>` / `--gain <dB>` | Gain in dB for this sample (`+2`, `-3`) |
 | `--level <0-100>` | SAPI volume (not the same as gain) |
 | `--voice <index\|name\|slug>` | Strict voice selection |
+| `--save <path>` | Write to a file instead of playing (alias `-o`) |
+| `--format <format>` | Output format for `--save`; inferred from the extension |
 | `--device <n>` | Output device index |
 | `--devices` | List output devices and exit |
 | `--help` | Sample usage |
@@ -338,6 +340,7 @@ resolve as `flag -> config -> built-in`.
 
 Options may appear before or after the text and accept `--speed=2` style.
 Unknown options and invalid values exit non-zero instead of being spoken.
+`--device` cannot be combined with `--save`; `--format` requires `--save`.
 
 ```powershell
 winTTSas sample
@@ -347,11 +350,24 @@ winTTSas sample --voice andrew --speed 1.5 --gain 6 --device 1
 winTTSas sample --level 80 --device 1 "SAPI level test"
 winTTSas sample --speed=2 --gain=+2 "Equals syntax"
 winTTSas sample -- "Text that starts with --dashes"
+
+# Save instead of play; format comes from the extension
+winTTSas sample "Hello" --save hello.mp3
+winTTSas sample "Hello" --save hello.wav
+winTTSas sample --voice andrew --speed 1.2 --volume +3 --save hello.flac
+
+# Force a format regardless of the extension
+winTTSas sample "Hello" --save output.bin --format mp3
 ```
 
 `--volume` is gain in dB, the same unit as `winTTSas volume`. `--level` is the
 SAPI 0-100 control. `--device 1` referred to the Realtek speakers on this
 machine; use the indices from `sample --devices`.
+
+`--save` writes `mp3`, `wav`, `opus`, `aac`, `flac`, or `pcm`. The format comes
+from `--format`, otherwise the file extension, otherwise the CLI default.
+Parent directories are created and existing files are overwritten. Rendering
+does not require the server; only ffmpeg is used for non-WAV output or gain.
 
 ### Autostart and uninstall
 
