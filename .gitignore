@@ -1,0 +1,27 @@
+# .NET
+bin/
+obj/
+artifacts/
+dist/
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/
+
+# Tests
+TestResults/
+coverage/
+
+# Runtime data
+logs/
+cache/
+*.log
+.tmp/
+
+# NaturalVoiceSAPIAdapter binaries (MIT; copied/downloaded locally)
+tools/NaturalVoiceSAPIAdapter/
+
+# Windows
+Thumbs.db
+Desktop.ini
