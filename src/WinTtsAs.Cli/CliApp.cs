@@ -73,7 +73,8 @@ winTTSas {BuildInfo.Version} - local OpenAI-compatible TTS for Windows voices
 Usage:
   winTTSas start [--foreground] [--quiet]
   winTTSas stop
-  winTTSas sample [text]
+  winTTSas sample [--device N] [text]
+  winTTSas sample --devices
   winTTSas volume [dB]
   winTTSas status [--json]
   winTTSas list [--json]
@@ -229,7 +230,77 @@ Notes:
             return 1;
         }
 
-        var text = string.Join(" ", args).Trim();
+        var textParts = new List<string>();
+        int? deviceIndex = null;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            if (arg.Equals("--devices", StringComparison.OrdinalIgnoreCase))
+            {
+                var devices = WaveOutPlayer.GetDevices();
+                if (devices.Count == 0)
+                {
+                    Console.Error.WriteLine("no audio output devices found.");
+                    return 1;
+                }
+
+                foreach (var item in devices)
+                {
+                    Console.WriteLine($"{item.Index,2}  {item.Name}");
+                }
+
+                return 0;
+            }
+
+            if (arg.Equals("--device", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out var parsed))
+                {
+                    Console.Error.WriteLine("usage: winTTSas sample --device <index> [text]");
+                    return 1;
+                }
+
+                deviceIndex = parsed;
+                i++;
+                continue;
+            }
+
+            if (arg.StartsWith("--device=", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!int.TryParse(arg["--device=".Length..], out var parsed))
+                {
+                    Console.Error.WriteLine("usage: winTTSas sample --device <index> [text]");
+                    return 1;
+                }
+
+                deviceIndex = parsed;
+                continue;
+            }
+
+            textParts.Add(arg);
+        }
+
+        if (deviceIndex is not null)
+        {
+            var devices = WaveOutPlayer.GetDevices();
+            var selectedDevice = devices.FirstOrDefault(d => d.Index == deviceIndex.Value);
+            if (selectedDevice is null)
+            {
+                Console.Error.WriteLine($"audio device {deviceIndex} not found.");
+                Console.Error.WriteLine("run: winTTSas sample --devices");
+                return 1;
+            }
+
+            Console.WriteLine($"output: {selectedDevice.Name}");
+        }
+        else
+        {
+            Console.WriteLine("output: system default");
+        }
+
+        var text = string.Join(" ", textParts).Trim();
         if (text.Length == 0)
         {
             text = SpeechSampler.DefaultSentence;
@@ -282,26 +353,7 @@ Notes:
             }
         }
 
-        var path = Path.Combine(
-            Path.GetTempPath(),
-            $"winTTSas-sample-{Guid.NewGuid():N}.wav");
-
-        try
-        {
-            File.WriteAllBytes(path, wav);
-            SpeechSampler.PlayWav(path);
-        }
-        finally
-        {
-            try
-            {
-                File.Delete(path);
-            }
-            catch
-            {
-                // best effort
-            }
-        }
+        WaveOutPlayer.Play(wav, deviceIndex);
 
         Console.WriteLine("done.");
         return 0;

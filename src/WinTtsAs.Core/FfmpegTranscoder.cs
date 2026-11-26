@@ -48,63 +48,96 @@ public sealed class FfmpegTranscoder
                 $"ffmpeg is required for {format} or gain; install ffmpeg or set FfmpegPath.");
         }
 
+        // A WAV written to a pipe has placeholder RIFF/data sizes because ffmpeg
+        // cannot seek back to patch them. Write WAV to a temp file so every
+        // consumer gets a valid header.
+        var isWav = format == "wav";
+        var tempPath = isWav
+            ? Path.Combine(Path.GetTempPath(), $"winTTSas-{Guid.NewGuid():N}.wav")
+            : null;
+        var outputTarget = tempPath ?? "pipe:1";
+
         var startInfo = new ProcessStartInfo
         {
             FileName = _path,
             RedirectStandardInput = true,
-            RedirectStandardOutput = true,
+            RedirectStandardOutput = !isWav,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
 
-        foreach (var arg in BuildArguments(format, filter))
+        foreach (var arg in BuildArguments(format, filter, outputTarget))
         {
             startInfo.ArgumentList.Add(arg);
         }
 
-        using var process = new Process { StartInfo = startInfo };
-        process.Start();
-
-        using var registration = cancellationToken.Register(() =>
-        {
-            try
-            {
-                if (!process.HasExited)
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-            }
-            catch
-            {
-                // best effort
-            }
-        });
-
-        var stdoutTask = ReadAllAsync(process.StandardOutput.BaseStream, cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
         try
         {
-            await process.StandardInput.BaseStream.WriteAsync(wav, cancellationToken);
-            process.StandardInput.Close();
+            using var process = new Process { StartInfo = startInfo };
+            process.Start();
+
+            using var registration = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                }
+                catch
+                {
+                    // best effort
+                }
+            });
+
+            var stdoutTask = isWav
+                ? Task.FromResult(Array.Empty<byte>())
+                : ReadAllAsync(process.StandardOutput.BaseStream, cancellationToken);
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+            try
+            {
+                await process.StandardInput.BaseStream.WriteAsync(wav, cancellationToken);
+                process.StandardInput.Close();
+            }
+            catch (IOException)
+            {
+                // ffmpeg may exit early; the exit code/stderr below is the useful part.
+            }
+
+            var output = await stdoutTask;
+            var error = await stderrTask;
+            await process.WaitForExitAsync(cancellationToken);
+
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    "ffmpeg failed: " + (string.IsNullOrWhiteSpace(error) ? $"exit {process.ExitCode}" : error.Trim()));
+            }
+
+            if (isWav)
+            {
+                return await File.ReadAllBytesAsync(tempPath!, cancellationToken);
+            }
+
+            return output;
         }
-        catch (IOException)
+        finally
         {
-            // ffmpeg may exit early; the exit code/stderr below is the useful part.
+            if (tempPath is not null)
+            {
+                try
+                {
+                    File.Delete(tempPath);
+                }
+                catch
+                {
+                    // best effort
+                }
+            }
         }
-
-        var output = await stdoutTask;
-        var error = await stderrTask;
-        await process.WaitForExitAsync(cancellationToken);
-
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException(
-                "ffmpeg failed: " + (string.IsNullOrWhiteSpace(error) ? $"exit {process.ExitCode}" : error.Trim()));
-        }
-
-        return output;
     }
 
     private static string? BuildGainFilter(double gainDb)
@@ -118,7 +151,10 @@ public sealed class FfmpegTranscoder
         return $"volume={db}dB,alimiter=limit=0.84:level=false:latency=true";
     }
 
-    private IEnumerable<string> BuildArguments(string format, string? filter)
+    private IEnumerable<string> BuildArguments(
+        string format,
+        string? filter,
+        string outputTarget)
     {
         yield return "-hide_banner";
         yield return "-loglevel";
@@ -198,7 +234,8 @@ public sealed class FfmpegTranscoder
                 throw new ArgumentException($"Unsupported format: {format}", nameof(format));
         }
 
-        yield return "pipe:1";
+        yield return "-y";
+        yield return outputTarget;
     }
 
     private bool Probe()
