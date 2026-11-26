@@ -7,6 +7,8 @@ public sealed record SpeechResult(
     byte[] Audio,
     string ContentType,
     string Voice,
+    double Speed,
+    int Rate,
     double GainDb,
     bool CacheHit,
     long ElapsedMs);
@@ -19,14 +21,17 @@ public sealed class SpeechService : IAsyncDisposable
     private readonly FfmpegTranscoder _ffmpeg;
     private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
 
+    private readonly object _reloadLock = new();
     private AppConfig _config;
     private VoiceCatalog _catalog;
+    private string _configStamp;
 
     public SpeechService(AppConfig config, ILogger<SpeechService> log)
     {
         _config = config;
         _log = log;
         _catalog = VoiceCatalog.Load();
+        _configStamp = GetConfigStamp();
         _pool = new SapiWorkerPool(config.Workers, config.QueueLimit, log);
         _cache = new AudioCache(AppPaths.CacheDir, config.CacheMaxMb, config.CacheEnabled, log);
         _ffmpeg = new FfmpegTranscoder(config.FfmpegPath, config.Mp3Bitrate, log);
@@ -47,16 +52,21 @@ public sealed class SpeechService : IAsyncDisposable
 
     public void Reload(AppConfig config)
     {
-        var catalog = VoiceCatalog.Load();
-        _config = config;
-        _catalog = catalog;
-        _log.LogInformation(
-            "reloaded config: {Voices} voices ({Natural} natural), default={Voice}, format={Format}, speed={Speed}",
-            catalog.Voices.Count,
-            catalog.NaturalCount,
-            catalog.Resolve(config.DefaultVoice, config)?.Name ?? "none",
-            config.DefaultFormat,
-            config.DefaultSpeed);
+        lock (_reloadLock)
+        {
+            var catalog = VoiceCatalog.Load();
+            _config = config;
+            _catalog = catalog;
+            _configStamp = GetConfigStamp();
+            _log.LogInformation(
+                "reloaded config: {Voices} voices ({Natural} natural), default={Voice}, format={Format}, speed={Speed}, gain={Gain}",
+                catalog.Voices.Count,
+                catalog.NaturalCount,
+                catalog.Resolve(config.DefaultVoice, config)?.Name ?? "none",
+                config.DefaultFormat,
+                config.DefaultSpeed,
+                config.GainDb);
+        }
     }
 
     public async Task WarmupAsync(CancellationToken cancellationToken)
@@ -83,6 +93,8 @@ public sealed class SpeechService : IAsyncDisposable
         double? gainDbRequest,
         CancellationToken cancellationToken)
     {
+        ReloadIfConfigChanged();
+
         var config = _config;
         var catalog = _catalog;
 
@@ -143,6 +155,8 @@ public sealed class SpeechService : IAsyncDisposable
             audio,
             AudioFormats.ContentType(format),
             voice.Name,
+            speed,
+            rate,
             gainDb,
             cacheHit,
             stopwatch.ElapsedMilliseconds);
@@ -150,6 +164,8 @@ public sealed class SpeechService : IAsyncDisposable
 
     public StatusInfo GetStatus()
     {
+        ReloadIfConfigChanged();
+
         var config = _config;
         var catalog = _catalog;
         var voice = catalog.Resolve(config.DefaultVoice, config);
@@ -165,6 +181,7 @@ public sealed class SpeechService : IAsyncDisposable
             Format = config.DefaultFormat,
             GainDb = config.GainDb,
             Speed = config.DefaultSpeed,
+            Rate = SpeechRate.FromSpeed(config.DefaultSpeed),
             Voices = catalog.Voices.Count,
             NaturalVoices = catalog.NaturalCount,
             Queue = _pool.QueueCount,
@@ -177,6 +194,59 @@ public sealed class SpeechService : IAsyncDisposable
             LogDir = AppPaths.LogDir,
             ConfigFile = AppPaths.ConfigFile
         };
+    }
+
+    private void ReloadIfConfigChanged()
+    {
+        var stamp = GetConfigStamp();
+        if (stamp.Length == 0 ||
+            string.Equals(stamp, _configStamp, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lock (_reloadLock)
+        {
+            if (string.Equals(stamp, _configStamp, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            try
+            {
+                var config = ConfigStore.Load();
+                var catalog = VoiceCatalog.Load();
+                _config = config;
+                _catalog = catalog;
+                _configStamp = stamp;
+                _log.LogInformation(
+                    "hot-reloaded config: default={Voice}, format={Format}, speed={Speed}, gain={Gain}",
+                    catalog.Resolve(config.DefaultVoice, config)?.Name ?? "none",
+                    config.DefaultFormat,
+                    config.DefaultSpeed,
+                    config.GainDb);
+            }
+            catch (Exception ex)
+            {
+                _configStamp = stamp;
+                _log.LogWarning(ex, "could not hot-reload config");
+            }
+        }
+    }
+
+    private static string GetConfigStamp()
+    {
+        try
+        {
+            var file = new FileInfo(AppPaths.ConfigFile);
+            return file.Exists
+                ? $"{file.LastWriteTimeUtc.Ticks}:{file.Length}"
+                : "";
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     public async ValueTask DisposeAsync()

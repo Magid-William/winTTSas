@@ -27,6 +27,7 @@ public sealed record StatusInfo
     public string Format { get; init; } = "";
     public double GainDb { get; init; }
     public double Speed { get; init; }
+    public int Rate { get; init; }
     public int Voices { get; init; }
     public int NaturalVoices { get; init; }
     public int Queue { get; init; }
@@ -53,7 +54,12 @@ public static class ControlPipeNames
     public static string ForCurrentUser()
     {
         var user = $"{Environment.UserDomainName}\\{Environment.UserName}";
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(user)))
+        var dataDir = Environment.GetEnvironmentVariable("WINTTSAS_DATA_DIR");
+        var scope = string.IsNullOrWhiteSpace(dataDir)
+            ? user
+            : user + "|" + Path.GetFullPath(dataDir);
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(scope)))
             .ToLowerInvariant()[..12];
         return $"winTTSas-{hash}";
     }

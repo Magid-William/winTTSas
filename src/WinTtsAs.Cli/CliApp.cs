@@ -521,9 +521,14 @@ Notes:
 
         config.DefaultVoice = selected.Name;
         ConfigStore.Save(config);
-        await ReloadAsync(cancellationToken);
+        var server = await ReloadAsync(cancellationToken);
 
         Console.WriteLine($"Default voice set to {selected.Name}.");
+        if (server is not null)
+        {
+            Console.WriteLine($"Server voice: {server.Voice}");
+        }
+
         return 0;
     }
 
@@ -553,9 +558,14 @@ Notes:
 
         config.GainDb = Math.Round(gain, 1);
         ConfigStore.Save(config);
-        await ReloadAsync(cancellationToken);
+        var server = await ReloadAsync(cancellationToken);
 
         Console.WriteLine($"Gain set to {FormatGain(config.GainDb)} dB.");
+        if (server is not null)
+        {
+            Console.WriteLine($"Server gain: {FormatGain(server.GainDb)} dB.");
+        }
+
         return 0;
     }
 
@@ -585,9 +595,14 @@ Notes:
 
         config.DefaultSpeed = speed;
         ConfigStore.Save(config);
-        await ReloadAsync(cancellationToken);
+        var server = await ReloadAsync(cancellationToken);
 
         Console.WriteLine($"Default speed set to {speed:0.00}.");
+        if (server is not null)
+        {
+            Console.WriteLine($"Server speed: {server.Speed:0.00} (SAPI rate {server.Rate}).");
+        }
+
         return 0;
     }
 
@@ -663,9 +678,14 @@ Notes:
 
         config.DefaultFormat = AudioFormats.Normalize(requested);
         ConfigStore.Save(config);
-        await ReloadAsync(cancellationToken);
+        var server = await ReloadAsync(cancellationToken);
 
         Console.WriteLine($"Default format set to {config.DefaultFormat}.");
+        if (server is not null)
+        {
+            Console.WriteLine($"Server format: {server.Format}.");
+        }
+
         return 0;
     }
 
@@ -752,17 +772,34 @@ Notes:
         return 0;
     }
 
-    private static async Task ReloadAsync(CancellationToken cancellationToken)
+    private static async Task<StatusInfo?> ReloadAsync(CancellationToken cancellationToken)
     {
         var response = await ControlPipeClient.SendAsync(
             new ControlRequest { Cmd = "reload" },
-            2000,
+            3000,
             cancellationToken);
+
+        if (response is null)
+        {
+            var runtime = RuntimeStore.Read();
+            if (runtime is not null && IsProcessAlive(runtime.Pid))
+            {
+                Console.Error.WriteLine(
+                    $"warning: server process {runtime.Pid} is running but did not answer the reload.");
+                Console.Error.WriteLine(
+                    "restart it with: winTTSas stop; winTTSas start");
+            }
+
+            return null;
+        }
 
         if (response is { Ok: false })
         {
             Console.Error.WriteLine("reload failed: " + response.Error);
+            return null;
         }
+
+        return response.Status;
     }
 
     private static void PrintStatus(StatusInfo status)
@@ -773,7 +810,7 @@ Notes:
         Console.WriteLine($"voice:    {status.Voice}");
         Console.WriteLine($"format:   {status.Format}");
         Console.WriteLine($"gain:     {FormatGain(status.GainDb)} dB");
-        Console.WriteLine($"speed:    {status.Speed:0.00}");
+        Console.WriteLine($"speed:    {status.Speed:0.00} (SAPI rate {status.Rate})");
         Console.WriteLine($"voices:   {status.Voices} installed ({status.NaturalVoices} natural)");
         Console.WriteLine($"queue:    {status.Queue}/{status.QueueLimit}");
         Console.WriteLine($"workers:  {status.Workers}");
@@ -797,7 +834,7 @@ Notes:
         Console.WriteLine($"voice:    {voice?.Name ?? "none"}");
         Console.WriteLine($"format:   {config.DefaultFormat}");
         Console.WriteLine($"gain:     {FormatGain(config.GainDb)} dB");
-        Console.WriteLine($"speed:    {config.DefaultSpeed:0.00}");
+        Console.WriteLine($"speed:    {config.DefaultSpeed:0.00} (SAPI rate {SpeechRate.FromSpeed(config.DefaultSpeed)})");
         Console.WriteLine($"voices:   {catalog.Voices.Count} installed ({catalog.NaturalCount} natural)");
         Console.WriteLine($"logon:    {(IsLogonEnabled() ? "on" : "off")}");
         Console.WriteLine($"adapter:  {adapter.Detail}");

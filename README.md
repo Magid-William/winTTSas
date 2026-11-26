@@ -126,6 +126,7 @@ Request fields:
 | `model` | Accepted and ignored |
 
 Audio is normalized to 24 kHz mono. Responses include `X-WinTTSas-Voice`,
+`X-WinTTSas-Speed`, `X-WinTTSas-Rate`, `X-WinTTSas-Gain-Db`,
 `X-WinTTSas-Synth-Ms`, and `X-WinTTSas-Cache`. Errors use OpenAI's JSON shape.
 
 ## CLI
@@ -168,6 +169,9 @@ non-interactive use.
 - Long input is split at sentence boundaries, synthesized as WAV, concatenated,
   then transcoded once with ffmpeg. Optional global gain is applied during that
   encode with a true-peak limiter.
+- Config changes are hot-reloaded from disk on the next request. The CLI also
+  pokes the running server over the control pipe and reports the server's
+  effective setting.
 - Canonical WAVs are cached by text/voice/rate/volume hash in
   `%LOCALAPPDATA%\winTTSas\cache`; logs and cache never contain plaintext text.
 - Runtime/config/log paths:
@@ -191,6 +195,17 @@ scripts/publish.ps1
 scripts/smoke.ps1
 docs/openai-clients.md
 ```
+
+## Troubleshooting
+
+- **Speed/format/gain change does not apply**: run `winTTSas status` and check
+  the config path and effective speed. The response headers
+  `X-WinTTSas-Speed` and `X-WinTTSas-Rate` show what the request actually used.
+  If the server is an older build, restart it once after upgrading.
+- **No audio from `sample`**: run `winTTSas sample --devices`; Windows may be
+  routing to a Bluetooth headset. Choose the speaker index or change the default
+  output device.
+- **401**: the configured token must be sent as `Authorization: Bearer ...`.
 
 ## Limitations
 

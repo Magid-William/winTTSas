@@ -86,7 +86,17 @@ public static class ServerHost
             builder.Services.AddCors(options =>
             {
                 options.AddDefaultPolicy(policy =>
-                    policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+                    policy
+                        .AllowAnyOrigin()
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .WithExposedHeaders(
+                            "X-WinTTSas-Voice",
+                            "X-WinTTSas-Speed",
+                            "X-WinTTSas-Rate",
+                            "X-WinTTSas-Gain-Db",
+                            "X-WinTTSas-Synth-Ms",
+                            "X-WinTTSas-Cache"));
             });
 
             app = builder.Build();
@@ -241,6 +251,7 @@ public static class ServerHost
             format = speech.Config.DefaultFormat,
             gainDb = speech.Config.GainDb,
             speed = speech.Config.DefaultSpeed,
+            rate = SpeechRate.FromSpeed(speech.Config.DefaultSpeed),
             voices = speech.Voices.Count,
             naturalVoices = speech.NaturalVoices,
             queue = speech.QueueCount,
@@ -440,6 +451,10 @@ public static class ServerHost
             context.Response.ContentType = result.ContentType;
             context.Response.ContentLength = result.Audio.Length;
             context.Response.Headers["X-WinTTSas-Voice"] = result.Voice;
+            context.Response.Headers["X-WinTTSas-Speed"] =
+                result.Speed.ToString("0.###", CultureInfo.InvariantCulture);
+            context.Response.Headers["X-WinTTSas-Rate"] =
+                result.Rate.ToString(CultureInfo.InvariantCulture);
             context.Response.Headers["X-WinTTSas-Gain-Db"] =
                 result.GainDb.ToString("0.###", CultureInfo.InvariantCulture);
             context.Response.Headers["X-WinTTSas-Synth-Ms"] =
@@ -451,10 +466,12 @@ public static class ServerHost
             await context.Response.Body.WriteAsync(result.Audio, cancellationToken);
 
             logger.LogInformation(
-                "speech voice={Voice} chars={Chars} format={Format} gain_db={GainDb} cache={Cache} ms={Ms} bytes={Bytes}",
+                "speech voice={Voice} chars={Chars} format={Format} speed={Speed} rate={Rate} gain_db={GainDb} cache={Cache} ms={Ms} bytes={Bytes}",
                 result.Voice,
                 request.Input.Length,
                 request.ResponseFormat ?? speech.Config.DefaultFormat,
+                result.Speed,
+                result.Rate,
                 result.GainDb,
                 result.CacheHit,
                 result.ElapsedMs,
