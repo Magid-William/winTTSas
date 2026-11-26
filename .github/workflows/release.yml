@@ -1,0 +1,119 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache ffmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: tools/ffmpeg
+          key: ffmpeg-9.1-full-win64
+
+      - name: Download ffmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+
+          $sevenZip = (Get-Command 7z -ErrorAction SilentlyContinue).Source
+          if (-not $sevenZip) {
+              $sevenZip = Join-Path $env:ProgramFiles '7-Zip\7z.exe'
+          }
+          if (-not (Test-Path $sevenZip)) {
+              throw '7-Zip was not found on the runner.'
+          }
+
+          $archive = Join-Path $env:RUNNER_TEMP 'ffmpeg.7z'
+          Invoke-WebRequest `
+              -Uri 'https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.1-full_build.7z' `
+              -OutFile $archive
+
+          $extract = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+          & $sevenZip x $archive "-o$extract" -y | Out-Null
+
+          $exe = Get-ChildItem $extract -Recurse -Filter ffmpeg.exe |
+              Select-Object -First 1
+          if (-not $exe) {
+              throw 'ffmpeg.exe was not found in the archive.'
+          }
+
+          $root = Split-Path (Split-Path $exe.FullName)
+          New-Item -ItemType Directory -Force tools\ffmpeg | Out-Null
+          Copy-Item $exe.FullName tools\ffmpeg\ffmpeg.exe -Force
+          Copy-Item (Join-Path $root 'LICENSE') tools\ffmpeg\LICENSE -Force
+          Copy-Item (Join-Path $root 'README.txt') tools\ffmpeg\README-ffmpeg.txt -Force
+
+      - name: Download adapter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+
+          $zip = Join-Path $env:RUNNER_TEMP 'NaturalVoiceSAPIAdapter.zip'
+          Invoke-WebRequest `
+              -Uri 'https://github.com/gexgd0419/NaturalVoiceSAPIAdapter/releases/download/v0.2.11/NaturalVoiceSAPIAdapter_v0.2.11_x86_x64.zip' `
+              -OutFile $zip
+
+          $expected = '01A0D38E4B42750AF3CBD82A120215C83BEA9A5B1AE133805E0F82819C911994'
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToUpperInvariant()
+          if ($actual -ne $expected) {
+              throw "Adapter SHA-256 mismatch: expected $expected, got $actual"
+          }
+
+          New-Item -ItemType Directory -Force tools\NaturalVoiceSAPIAdapter | Out-Null
+          Expand-Archive -LiteralPath $zip -DestinationPath tools\NaturalVoiceSAPIAdapter -Force
+
+      - name: Publish
+        shell: pwsh
+        run: .\scripts\publish.ps1
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Compress-Archive `
+              -Path dist\winTTSas `
+              -DestinationPath dist\winTTSas.zip `
+              -CompressionLevel Optimal
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "${{ github.ref_name }}"
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+              gh release delete $tag --yes
+          }
+
+          gh release create $tag dist\winTTSas.zip `
+              --title $tag `
+              --generate-notes
