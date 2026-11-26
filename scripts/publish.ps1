@@ -37,6 +37,10 @@ $scriptsOut = Join-Path $out 'scripts'
 New-Item -ItemType Directory -Force -Path $scriptsOut | Out-Null
 Copy-Item (Join-Path $root 'scripts\install-adapter.ps1') $scriptsOut -Force
 
+$docsOut = Join-Path $out 'docs'
+New-Item -ItemType Directory -Force -Path $docsOut | Out-Null
+Copy-Item (Join-Path $root 'docs\*') $docsOut -Force
+
 Copy-Item (Join-Path $root 'README.md') $out -Force
 
 Write-Host "Published to $out"
