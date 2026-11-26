@@ -7,6 +7,7 @@ public sealed record SpeechResult(
     byte[] Audio,
     string ContentType,
     string Voice,
+    double GainDb,
     bool CacheHit,
     long ElapsedMs);
 
@@ -79,6 +80,7 @@ public sealed class SpeechService : IAsyncDisposable
         string? voiceRequest,
         string? formatRequest,
         double? speedRequest,
+        double? gainDbRequest,
         CancellationToken cancellationToken)
     {
         var config = _config;
@@ -101,10 +103,8 @@ public sealed class SpeechService : IAsyncDisposable
             ?? throw new InvalidOperationException("No SAPI voices are installed.");
 
         var format = AudioFormats.Normalize(formatRequest, config.DefaultFormat);
-        var speed = Math.Clamp(
-            (speedRequest ?? 1.0) * config.DefaultSpeed,
-            0.25,
-            4.0);
+        var speed = Math.Clamp(speedRequest ?? config.DefaultSpeed, 0.25, 4.0);
+        var gainDb = Math.Clamp(gainDbRequest ?? config.GainDb, -24.0, 24.0);
         var rate = SpeechRate.FromSpeed(speed);
         var cacheKey = AudioCache.Key(normalized, voice.Name, rate, config.Volume);
 
@@ -135,7 +135,7 @@ public sealed class SpeechService : IAsyncDisposable
         var audio = await _ffmpeg.ToFormatAsync(
             wav,
             format,
-            config.GainDb,
+            gainDb,
             cancellationToken);
         stopwatch.Stop();
 
@@ -143,6 +143,7 @@ public sealed class SpeechService : IAsyncDisposable
             audio,
             AudioFormats.ContentType(format),
             voice.Name,
+            gainDb,
             cacheHit,
             stopwatch.ElapsedMilliseconds);
     }

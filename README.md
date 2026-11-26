@@ -121,7 +121,8 @@ Request fields:
 | `input` | Required, 1-4096 chars; chunked internally |
 | `voice` | OpenAI name, Azure-style name, SAPI name, or slug |
 | `response_format` | `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm` |
-| `speed` | 0.25-4.0; multiplied by the global speed |
+| `speed` | 0.25-4.0; overrides the CLI default; CLI speed is used when omitted |
+| `gain_db` | -24 to +24 dB; overrides the CLI gain; CLI gain is used when omitted |
 | `model` | Accepted and ignored |
 
 Audio is normalized to 24 kHz mono. Responses include `X-WinTTSas-Voice`,
@@ -138,8 +139,8 @@ Audio is normalized to 24 kHz mono. Responses include `X-WinTTSas-Voice`,
 | `winTTSas status [--json]` | State, PID, URL, voice, format, speed, queue, logon |
 | `winTTSas list [--json]` | Installed SAPI voices |
 | `winTTSas select <index, name, or slug>` | Set default voice; live reload |
-| `winTTSas volume [dB]` | Set global gain (-24 to +24 dB); live reload |
-| `winTTSas speed [factor]` | Set global speed; live reload |
+| `winTTSas volume [dB]` | Set default gain (-24 to +24 dB); live reload |
+| `winTTSas speed [factor]` | Set default speed; live reload |
 | `winTTSas port [port]` | Set port; restarts if running |
 | `winTTSas format [format]` | Set default format; live reload, no restart |
 | `winTTSas logon on / off` | Hidden per-user autostart via HKCU Run |
@@ -148,10 +149,11 @@ Audio is normalized to 24 kHz mono. Responses include `X-WinTTSas-Voice`,
 
 `format` accepts `mp3`, `wav`, `opus`, `aac`, `flac`, or `pcm`.
 
-`volume` applies a global gain during transcoding with a lookahead limiter
-(`volume=<dB>,alimiter=limit=0.84`). The raw WAV cache is not modified, so
-changing gain does not invalidate it. Non-zero gain makes even WAV output go
-through ffmpeg.
+`volume` sets the default gain. A request can override it with the nonstandard
+`gain_db` field; standard OpenAI clients simply omit it. Gain is applied during
+transcoding with a lookahead limiter (`volume=<dB>,alimiter=limit=0.84`). The
+raw WAV cache is not modified, so changing gain does not invalidate it.
+Non-zero gain makes even WAV output go through ffmpeg.
 
 Uninstall keeps the adapter registration by default. Use `--remove-adapter` to
 unregister it, `--keep-data` to preserve config/cache/logs, and `--yes` for
@@ -195,7 +197,7 @@ docs/openai-clients.md
 - No true streaming: audio is returned after synthesis.
 - No SSML/pitch controls in v1.
 - No text cleaning by default; input is spoken as sent.
-- Gain is global; there is no per-request volume field in the OpenAI API.
+- Gain is a CLI default; the nonstandard `gain_db` request field can override it.
 - `mp3`/`opus`/`aac`/`flac`/`pcm` require ffmpeg; `wav` only requires it when
   gain is active.
 - NaturalVoiceSAPIAdapter is an unsupported shim; Windows updates can break it.

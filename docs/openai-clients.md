@@ -79,14 +79,31 @@ Invoke-WebRequest `
 
 ## Loudness
 
-Output gain is a server setting, not an OpenAI request field:
+Set the default gain in the CLI:
 
 ```powershell
 winTTSas volume +6
 ```
 
-The server keeps the raw WAV cache intact and applies gain plus a lookahead
-limiter during transcoding. `winTTSas volume 0` disables it.
+Standard OpenAI clients omit volume and get that default. A request can override
+it with the nonstandard `gain_db` field (or `gainDb`):
+
+```json
+{
+  "model": "tts-1",
+  "input": "Louder, please.",
+  "voice": "alloy",
+  "response_format": "mp3",
+  "gain_db": 12
+}
+```
+
+Gain is applied with a lookahead limiter during transcoding. The raw WAV cache
+stays intact, so changing gain does not invalidate it. `gain_db: 0` overrides a
+non-zero CLI default and disables gain for that request.
+
+`speed` works the same way: the request value overrides `winTTSas speed`; the
+CLI default applies only when `speed` is omitted.
 
 ## Voice names
 

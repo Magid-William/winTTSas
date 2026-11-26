@@ -415,6 +415,18 @@ public static class ServerHost
             return;
         }
 
+        var requestGain = request.GainDb ?? request.GainDbCamel;
+        if (requestGain is < -24.0 or > 24.0)
+        {
+            await WriteError(
+                context,
+                StatusCodes.Status400BadRequest,
+                "gain_db must be between -24 and +24.",
+                "invalid_request_error",
+                "gain_db");
+            return;
+        }
+
         try
         {
             var result = await speech.SynthesizeAsync(
@@ -422,11 +434,14 @@ public static class ServerHost
                 request.Voice,
                 request.ResponseFormat,
                 request.Speed,
+                requestGain,
                 cancellationToken);
 
             context.Response.ContentType = result.ContentType;
             context.Response.ContentLength = result.Audio.Length;
             context.Response.Headers["X-WinTTSas-Voice"] = result.Voice;
+            context.Response.Headers["X-WinTTSas-Gain-Db"] =
+                result.GainDb.ToString("0.###", CultureInfo.InvariantCulture);
             context.Response.Headers["X-WinTTSas-Synth-Ms"] =
                 result.ElapsedMs.ToString(CultureInfo.InvariantCulture);
             context.Response.Headers["X-WinTTSas-Cache"] =
@@ -436,10 +451,11 @@ public static class ServerHost
             await context.Response.Body.WriteAsync(result.Audio, cancellationToken);
 
             logger.LogInformation(
-                "speech voice={Voice} chars={Chars} format={Format} cache={Cache} ms={Ms} bytes={Bytes}",
+                "speech voice={Voice} chars={Chars} format={Format} gain_db={GainDb} cache={Cache} ms={Ms} bytes={Bytes}",
                 result.Voice,
                 request.Input.Length,
                 request.ResponseFormat ?? speech.Config.DefaultFormat,
+                result.GainDb,
                 result.CacheHit,
                 result.ElapsedMs,
                 result.Audio.Length);
@@ -591,6 +607,12 @@ public static class ServerHost
 
         [JsonPropertyName("speed")]
         public double? Speed { get; set; }
+
+        [JsonPropertyName("gain_db")]
+        public double? GainDb { get; set; }
+
+        [JsonPropertyName("gainDb")]
+        public double? GainDbCamel { get; set; }
 
         [JsonPropertyName("instructions")]
         public string? Instructions { get; set; }
