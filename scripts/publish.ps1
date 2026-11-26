@@ -8,7 +8,15 @@ $root = Split-Path -Parent $PSScriptRoot
 $out = Join-Path $root $Output
 
 if (Test-Path $out) {
-    Remove-Item $out -Recurse -Force
+    try {
+        Remove-Item $out -Recurse -Force -ErrorAction Stop
+    }
+    catch {
+        # A shell or editor can hold the directory itself open. Deleting the
+        # contents is enough; publish will recreate the files.
+        Get-ChildItem $out -Force -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 

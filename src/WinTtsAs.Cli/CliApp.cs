@@ -46,6 +46,7 @@ public static class CliApp
                 "version" or "-v" or "--version" => Version(),
                 "start" => await StartAsync(rest, cancellationToken),
                 "stop" => await StopAsync(cancellationToken),
+                "sample" => Sample(rest),
                 "status" => await StatusAsync(rest, cancellationToken),
                 "list" => List(rest),
                 "select" => await SelectAsync(rest, cancellationToken),
@@ -71,6 +72,7 @@ winTTSas {BuildInfo.Version} - local OpenAI-compatible TTS for Windows voices
 Usage:
   winTTSas start [--foreground] [--quiet]
   winTTSas stop
+  winTTSas sample [text]
   winTTSas status [--json]
   winTTSas list [--json]
   winTTSas select <index|name|slug>
@@ -209,6 +211,46 @@ Notes:
             : "server did not become ready in time.");
         PrintLogTail();
         return 1;
+    }
+
+    private static int Sample(string[] args)
+    {
+        var config = ConfigStore.Load();
+        var catalog = VoiceCatalog.Load();
+        var voice = catalog.Resolve(config.DefaultVoice, config);
+
+        if (voice is null)
+        {
+            Console.Error.WriteLine("no SAPI voices are installed.");
+            return 1;
+        }
+
+        var text = string.Join(" ", args).Trim();
+        if (text.Length == 0)
+        {
+            text = SpeechSampler.DefaultSentence;
+        }
+
+        if (text.Length > config.MaxTextLength)
+        {
+            Console.Error.WriteLine(
+                $"sample text must be {config.MaxTextLength} characters or fewer.");
+            return 1;
+        }
+
+        var rate = SpeechRate.FromSpeed(config.DefaultSpeed);
+
+        Console.WriteLine($"voice:  {voice.Name}");
+        Console.WriteLine($"speed:  {config.DefaultSpeed:0.00} (SAPI rate {rate})");
+        Console.WriteLine($"volume: {config.Volume}");
+        Console.WriteLine($"text:   {text}");
+        Console.WriteLine();
+        Console.WriteLine("speaking...");
+
+        SpeechSampler.Speak(voice.Name, text, rate, config.Volume);
+
+        Console.WriteLine("done.");
+        return 0;
     }
 
     private static async Task<int> StopAsync(CancellationToken cancellationToken)

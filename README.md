@@ -18,6 +18,7 @@ Aria/Guy/Jenny/Ryan/Sonia can be installed later from
 ```powershell
 .\dist\winTTSas\winTTSas.exe start
 .\dist\winTTSas\winTTSas.exe list
+.\dist\winTTSas\winTTSas.exe sample "Hello from winTTSas."
 .\dist\winTTSas\winTTSas.exe status
 ```
 
@@ -125,6 +126,7 @@ Audio is normalized to 24 kHz mono. Responses include `X-WinTTSas-Voice`,
 | `winTTSas start` | Start the hidden server; print URL/voice/format/speed |
 | `winTTSas start --foreground` | Run the server in this console |
 | `winTTSas stop` | Graceful shutdown; force-kill fallback |
+| `winTTSas sample [text]` | Speak a sentence aloud with the current voice/speed |
 | `winTTSas status [--json]` | State, PID, URL, voice, format, speed, queue, logon |
 | `winTTSas list [--json]` | Installed SAPI voices |
 | `winTTSas select <index, name, or slug>` | Set default voice; live reload |
