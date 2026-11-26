@@ -9,6 +9,7 @@ public sealed class AppConfig
     public string DefaultVoice { get; set; } = "";
     public double DefaultSpeed { get; set; } = 1.0;
     public string DefaultFormat { get; set; } = "mp3";
+    public double GainDb { get; set; } = 0;
     public int MaxTextLength { get; set; } = 4096;
     public int ChunkChars { get; set; } = 1200;
     public int Workers { get; set; } = 2;
@@ -30,6 +31,17 @@ public sealed class AppConfig
 
         Bind = string.IsNullOrWhiteSpace(Bind) ? "127.0.0.1" : Bind.Trim();
         DefaultFormat = AudioFormats.Normalize(DefaultFormat, "mp3");
+        if (!double.IsFinite(GainDb))
+        {
+            GainDb = 0;
+        }
+
+        if (!double.IsFinite(DefaultSpeed))
+        {
+            DefaultSpeed = 1.0;
+        }
+
+        GainDb = Math.Round(Math.Clamp(GainDb, -24.0, 24.0), 1);
         DefaultSpeed = Math.Clamp(DefaultSpeed, 0.25, 4.0);
         MaxTextLength = Math.Clamp(MaxTextLength, 1, 16_000);
         ChunkChars = Math.Clamp(ChunkChars, 200, Math.Max(200, MaxTextLength));

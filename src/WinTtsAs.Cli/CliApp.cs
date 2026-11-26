@@ -46,10 +46,11 @@ public static class CliApp
                 "version" or "-v" or "--version" => Version(),
                 "start" => await StartAsync(rest, cancellationToken),
                 "stop" => await StopAsync(cancellationToken),
-                "sample" => Sample(rest),
+                "sample" => await SampleAsync(rest, cancellationToken),
                 "status" => await StatusAsync(rest, cancellationToken),
                 "list" => List(rest),
                 "select" => await SelectAsync(rest, cancellationToken),
+                "volume" or "gain" => await VolumeAsync(rest, cancellationToken),
                 "speed" => await SpeedAsync(rest, cancellationToken),
                 "update" => await UpdateAsync(rest, cancellationToken),
                 "logon" => await LogonAsync(rest, cancellationToken),
@@ -73,6 +74,7 @@ Usage:
   winTTSas start [--foreground] [--quiet]
   winTTSas stop
   winTTSas sample [text]
+  winTTSas volume [dB]
   winTTSas status [--json]
   winTTSas list [--json]
   winTTSas select <index|name|slug>
@@ -213,7 +215,9 @@ Notes:
         return 1;
     }
 
-    private static int Sample(string[] args)
+    private static async Task<int> SampleAsync(
+        string[] args,
+        CancellationToken cancellationToken)
     {
         var config = ConfigStore.Load();
         var catalog = VoiceCatalog.Load();
@@ -242,12 +246,62 @@ Notes:
 
         Console.WriteLine($"voice:  {voice.Name}");
         Console.WriteLine($"speed:  {config.DefaultSpeed:0.00} (SAPI rate {rate})");
+        Console.WriteLine($"gain:   {FormatGain(config.GainDb)} dB");
         Console.WriteLine($"volume: {config.Volume}");
         Console.WriteLine($"text:   {text}");
         Console.WriteLine();
         Console.WriteLine("speaking...");
 
-        SpeechSampler.Speak(voice.Name, text, rate, config.Volume);
+        var wav = SpeechSampler.SynthesizeWav(
+            voice.Name,
+            text,
+            rate,
+            config.Volume);
+
+        if (Math.Abs(config.GainDb) >= 0.05)
+        {
+            try
+            {
+                var ffmpeg = new FfmpegTranscoder(config.FfmpegPath, config.Mp3Bitrate);
+                if (ffmpeg.IsAvailable)
+                {
+                    wav = await ffmpeg.ToFormatAsync(
+                        wav,
+                        "wav",
+                        config.GainDb,
+                        cancellationToken);
+                }
+                else
+                {
+                    Console.Error.WriteLine("warning: ffmpeg not found; playing without gain.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("warning: gain failed: " + ex.Message);
+            }
+        }
+
+        var path = Path.Combine(
+            Path.GetTempPath(),
+            $"winTTSas-sample-{Guid.NewGuid():N}.wav");
+
+        try
+        {
+            File.WriteAllBytes(path, wav);
+            SpeechSampler.PlayWav(path);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch
+            {
+                // best effort
+            }
+        }
 
         Console.WriteLine("done.");
         return 0;
@@ -420,6 +474,38 @@ Notes:
         return 0;
     }
 
+    private static async Task<int> VolumeAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        var config = ConfigStore.Load();
+
+        if (args.Length == 0)
+        {
+            Console.WriteLine($"{FormatGain(config.GainDb)} dB");
+            return 0;
+        }
+
+        if (!double.TryParse(
+                args[0],
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var gain) ||
+            !double.IsFinite(gain) ||
+            gain is < -24 or > 24)
+        {
+            Console.Error.WriteLine("gain must be between -24 and +24 dB.");
+            return 1;
+        }
+
+        config.GainDb = Math.Round(gain, 1);
+        ConfigStore.Save(config);
+        await ReloadAsync(cancellationToken);
+
+        Console.WriteLine($"Gain set to {FormatGain(config.GainDb)} dB.");
+        return 0;
+    }
+
     private static async Task<int> SpeedAsync(
         string[] args,
         CancellationToken cancellationToken)
@@ -437,6 +523,7 @@ Notes:
                 NumberStyles.Float,
                 CultureInfo.InvariantCulture,
                 out var speed) ||
+            !double.IsFinite(speed) ||
             speed is < 0.25 or > 4.0)
         {
             Console.Error.WriteLine("speed must be between 0.25 and 4.0.");
@@ -650,6 +737,7 @@ Notes:
         Console.WriteLine($"base URL: {status.BaseUrl}");
         Console.WriteLine($"voice:    {status.Voice}");
         Console.WriteLine($"format:   {status.Format}");
+        Console.WriteLine($"gain:     {FormatGain(status.GainDb)} dB");
         Console.WriteLine($"speed:    {status.Speed:0.00}");
         Console.WriteLine($"voices:   {status.Voices} installed ({status.NaturalVoices} natural)");
         Console.WriteLine($"queue:    {status.Queue}/{status.QueueLimit}");
@@ -673,6 +761,7 @@ Notes:
         Console.WriteLine($"port:     {config.Port}");
         Console.WriteLine($"voice:    {voice?.Name ?? "none"}");
         Console.WriteLine($"format:   {config.DefaultFormat}");
+        Console.WriteLine($"gain:     {FormatGain(config.GainDb)} dB");
         Console.WriteLine($"speed:    {config.DefaultSpeed:0.00}");
         Console.WriteLine($"voices:   {catalog.Voices.Count} installed ({catalog.NaturalCount} natural)");
         Console.WriteLine($"logon:    {(IsLogonEnabled() ? "on" : "off")}");
@@ -695,6 +784,9 @@ Notes:
                 $"{index + 1,3}  {Truncate(voice.Name, 33),-33}  {voice.Language,-5}  {(voice.IsNatural ? "yes" : "no"),-7}  {marker}");
         }
     }
+
+    private static string FormatGain(double gain) =>
+        gain.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture);
 
     private static string Truncate(string value, int length) =>
         value.Length <= length ? value : value[..Math.Max(0, length - 1)] + "…";

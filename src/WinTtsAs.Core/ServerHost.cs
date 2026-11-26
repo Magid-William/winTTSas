@@ -239,6 +239,7 @@ public static class ServerHost
             baseUrl = AppPaths.OpenAiBaseUrl(speech.Config.Port, speech.Config.Bind),
             voice = speech.DefaultVoice?.Name,
             format = speech.Config.DefaultFormat,
+            gainDb = speech.Config.GainDb,
             speed = speech.Config.DefaultSpeed,
             voices = speech.Voices.Count,
             naturalVoices = speech.NaturalVoices,

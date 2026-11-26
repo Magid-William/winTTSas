@@ -25,6 +25,7 @@ public sealed record StatusInfo
     public string BaseUrl { get; init; } = "";
     public string Voice { get; init; } = "";
     public string Format { get; init; } = "";
+    public double GainDb { get; init; }
     public double Speed { get; init; }
     public int Voices { get; init; }
     public int NaturalVoices { get; init; }

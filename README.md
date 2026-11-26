@@ -54,7 +54,8 @@ A browser test form is at `http://127.0.0.1:5178/`.
 
 ## Build
 
-Requires the .NET 8 SDK and, for compressed formats, ffmpeg on `PATH`.
+Requires the .NET 8 SDK and ffmpeg on `PATH` for compressed formats or any
+non-zero gain; plain WAV at 0 dB needs no ffmpeg.
 
 ```powershell
 dotnet build
@@ -130,6 +131,7 @@ Audio is normalized to 24 kHz mono. Responses include `X-WinTTSas-Voice`,
 | `winTTSas status [--json]` | State, PID, URL, voice, format, speed, queue, logon |
 | `winTTSas list [--json]` | Installed SAPI voices |
 | `winTTSas select <index, name, or slug>` | Set default voice; live reload |
+| `winTTSas volume [dB]` | Set global gain (-24 to +24 dB); live reload |
 | `winTTSas speed [factor]` | Set global speed; live reload |
 | `winTTSas update port [port]` | Set port; restarts if running |
 | `winTTSas update format [format]` | Set default format; live reload, no restart |
@@ -138,6 +140,11 @@ Audio is normalized to 24 kHz mono. Responses include `X-WinTTSas-Voice`,
 | `winTTSas help` | Usage |
 
 `update format` accepts `mp3`, `wav`, `opus`, `aac`, `flac`, or `pcm`.
+
+`volume` applies a global gain during transcoding with a lookahead limiter
+(`volume=<dB>,alimiter=limit=0.84`). The raw WAV cache is not modified, so
+changing gain does not invalidate it. Non-zero gain makes even WAV output go
+through ffmpeg.
 
 Uninstall keeps the adapter registration by default. Use `--remove-adapter` to
 unregister it, `--keep-data` to preserve config/cache/logs, and `--yes` for
@@ -150,7 +157,8 @@ non-interactive use.
 - Synthesis runs on dedicated STA worker threads (default 2) with a bounded
   queue (default 20). SAPI is not called from Kestrel request threads.
 - Long input is split at sentence boundaries, synthesized as WAV, concatenated,
-  then transcoded once with ffmpeg.
+  then transcoded once with ffmpeg. Optional global gain is applied during that
+  encode with a true-peak limiter.
 - Canonical WAVs are cached by text/voice/rate/volume hash in
   `%LOCALAPPDATA%\winTTSas\cache`; logs and cache never contain plaintext text.
 - Runtime/config/log paths:
@@ -180,6 +188,8 @@ docs/openai-clients.md
 - No true streaming: audio is returned after synthesis.
 - No SSML/pitch controls in v1.
 - No text cleaning by default; input is spoken as sent.
-- `mp3`/`opus`/`aac`/`flac`/`pcm` require ffmpeg; `wav` does not.
+- Gain is global; there is no per-request volume field in the OpenAI API.
+- `mp3`/`opus`/`aac`/`flac`/`pcm` require ffmpeg; `wav` only requires it when
+  gain is active.
 - NaturalVoiceSAPIAdapter is an unsupported shim; Windows updates can break it.
 - Stored Narrator HD voices are only partially supported by the adapter.

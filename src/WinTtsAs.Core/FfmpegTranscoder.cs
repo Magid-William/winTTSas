@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 
 namespace WinTtsAs.Core;
@@ -30,10 +31,13 @@ public sealed class FfmpegTranscoder
     public async Task<byte[]> ToFormatAsync(
         byte[] wav,
         string format,
+        double gainDb,
         CancellationToken cancellationToken)
     {
         format = AudioFormats.Normalize(format);
-        if (format == "wav")
+        var filter = BuildGainFilter(gainDb);
+
+        if (format == "wav" && filter is null)
         {
             return wav;
         }
@@ -41,7 +45,7 @@ public sealed class FfmpegTranscoder
         if (!IsAvailable)
         {
             throw new FfmpegUnavailableException(
-                $"ffmpeg is required for {format}; install ffmpeg or set FfmpegPath.");
+                $"ffmpeg is required for {format} or gain; install ffmpeg or set FfmpegPath.");
         }
 
         var startInfo = new ProcessStartInfo
@@ -54,7 +58,7 @@ public sealed class FfmpegTranscoder
             CreateNoWindow = true
         };
 
-        foreach (var arg in BuildArguments(format))
+        foreach (var arg in BuildArguments(format, filter))
         {
             startInfo.ArgumentList.Add(arg);
         }
@@ -103,7 +107,18 @@ public sealed class FfmpegTranscoder
         return output;
     }
 
-    private IEnumerable<string> BuildArguments(string format)
+    private static string? BuildGainFilter(double gainDb)
+    {
+        if (Math.Abs(gainDb) < 0.05)
+        {
+            return null;
+        }
+
+        var db = gainDb.ToString("0.###", CultureInfo.InvariantCulture);
+        return $"volume={db}dB,alimiter=limit=0.84:level=false:latency=true";
+    }
+
+    private IEnumerable<string> BuildArguments(string format, string? filter)
     {
         yield return "-hide_banner";
         yield return "-loglevel";
@@ -113,8 +128,23 @@ public sealed class FfmpegTranscoder
         yield return "-ac";
         yield return "1";
 
+        if (filter is not null)
+        {
+            yield return "-af";
+            yield return filter;
+        }
+
         switch (format)
         {
+            case "wav":
+                yield return "-ar";
+                yield return "24000";
+                yield return "-c:a";
+                yield return "pcm_s16le";
+                yield return "-f";
+                yield return "wav";
+                break;
+
             case "mp3":
                 yield return "-ar";
                 yield return "24000";

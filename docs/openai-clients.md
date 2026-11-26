@@ -77,6 +77,17 @@ Invoke-WebRequest `
   -OutFile hello.mp3
 ```
 
+## Loudness
+
+Output gain is a server setting, not an OpenAI request field:
+
+```powershell
+winTTSas volume +6
+```
+
+The server keeps the raw WAV cache intact and applies gain plus a lookahead
+limiter during transcoding. `winTTSas volume 0` disables it.
+
 ## Voice names
 
 `voice` accepts:

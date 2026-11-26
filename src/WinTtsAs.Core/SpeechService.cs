@@ -132,7 +132,11 @@ public sealed class SpeechService : IAsyncDisposable
             cacheHit = true;
         }
 
-        var audio = await _ffmpeg.ToFormatAsync(wav, format, cancellationToken);
+        var audio = await _ffmpeg.ToFormatAsync(
+            wav,
+            format,
+            config.GainDb,
+            cancellationToken);
         stopwatch.Stop();
 
         return new SpeechResult(
@@ -158,6 +162,7 @@ public sealed class SpeechService : IAsyncDisposable
             BaseUrl = AppPaths.OpenAiBaseUrl(config.Port, config.Bind),
             Voice = voice?.Name ?? "",
             Format = config.DefaultFormat,
+            GainDb = config.GainDb,
             Speed = config.DefaultSpeed,
             Voices = catalog.Voices.Count,
             NaturalVoices = catalog.NaturalCount,
