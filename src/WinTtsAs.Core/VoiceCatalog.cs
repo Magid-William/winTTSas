@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Speech.Synthesis;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -108,6 +109,15 @@ public sealed class VoiceCatalog
             return fallback;
         }
 
+        if (TryParseIndex(query, out var oneBased))
+        {
+            var indexed = ByIndex(oneBased);
+            if (indexed is not null)
+            {
+                return indexed;
+            }
+        }
+
         if (config.VoiceMap is not null &&
             config.VoiceMap.TryGetValue(query, out var mapped) &&
             !string.IsNullOrWhiteSpace(mapped))
@@ -156,6 +166,22 @@ public sealed class VoiceCatalog
         }
 
         return fallback;
+    }
+
+    public VoiceDescriptor? ByIndex(int oneBased) =>
+        oneBased >= 1 && oneBased <= Voices.Count ? Voices[oneBased - 1] : null;
+
+    private static bool TryParseIndex(string value, out int oneBased)
+    {
+        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index) &&
+            index >= 1)
+        {
+            oneBased = index;
+            return true;
+        }
+
+        oneBased = 0;
+        return false;
     }
 
     public VoiceDescriptor? FindExact(string query)

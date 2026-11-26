@@ -56,6 +56,19 @@ try {
     $file = Get-Item $mp3
     Write-Host "audio: $($file.FullName) ($($file.Length) bytes)"
 
+    $getPath = Join-Path $data 'smoke-get.wav'
+    Invoke-WebRequest `
+        -Uri "http://127.0.0.1:$Port/v1/voice/1/speed/1.2/format/wav/text/Smoke%20GET%20path" `
+        -OutFile $getPath
+
+    $getQuery = Join-Path $data 'smoke-get-query.mp3'
+    Invoke-WebRequest `
+        -Uri "http://127.0.0.1:$Port/v1/audio/speech?input=Smoke%20GET%20query&format=mp3" `
+        -OutFile $getQuery
+
+    Write-Host "get path:  $((Get-Item $getPath).Length) bytes"
+    Write-Host "get query: $((Get-Item $getQuery).Length) bytes"
+
     if (Get-Command ffprobe -ErrorAction SilentlyContinue) {
         ffprobe -v error -show_entries format=format_name,duration -of default=noprint_wrappers=1 $mp3
     }

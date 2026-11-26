@@ -305,6 +305,18 @@ public static class ServerHost
 
         app.MapPost("/audio/speech", (HttpContext context) =>
             HandleSpeechAsync(context, speech, logger));
+
+        app.MapGet("/v1/audio/speech", (HttpContext context) =>
+            HandleSpeechQueryAsync(context, speech, logger));
+
+        app.MapGet("/audio/speech", (HttpContext context) =>
+            HandleSpeechQueryAsync(context, speech, logger));
+
+        app.MapGet("/v1/{**segments}", (HttpContext context) =>
+            HandleSpeechSegmentsAsync(context, speech, logger));
+
+        app.MapGet("/audio/{**segments}", (HttpContext context) =>
+            HandleSpeechSegmentsAsync(context, speech, logger));
     }
 
     private static Task<ControlResponse> HandleControlAsync(
@@ -361,7 +373,6 @@ public static class ServerHost
         SpeechService speech,
         ILogger logger)
     {
-        var cancellationToken = context.RequestAborted;
         OpenAiSpeechRequest? request;
 
         try
@@ -369,7 +380,7 @@ public static class ServerHost
             request = await JsonSerializer.DeserializeAsync<OpenAiSpeechRequest>(
                 context.Request.Body,
                 JsonOptions,
-                cancellationToken);
+                context.RequestAborted);
         }
         catch (JsonException)
         {
@@ -381,7 +392,68 @@ public static class ServerHost
             return;
         }
 
-        if (request is null || string.IsNullOrWhiteSpace(request.Input))
+        await ExecuteSpeechAsync(context, speech, logger, request ?? new OpenAiSpeechRequest());
+    }
+
+    private static async Task HandleSpeechQueryAsync(
+        HttpContext context,
+        SpeechService speech,
+        ILogger logger)
+    {
+        if (!SpeechUrl.TryParseQuery(context.Request.Query, out var values, out var error))
+        {
+            await WriteSpeechUrlErrorAsync(context, error!);
+            return;
+        }
+
+        await ExecuteSpeechAsync(context, speech, logger, ToSpeechRequest(values));
+    }
+
+    private static async Task HandleSpeechSegmentsAsync(
+        HttpContext context,
+        SpeechService speech,
+        ILogger logger)
+    {
+        var segments = context.Request.RouteValues.TryGetValue("segments", out var value)
+            ? value as string
+            : null;
+
+        if (!SpeechUrl.TryParsePath(segments, out var values, out var error))
+        {
+            await WriteSpeechUrlErrorAsync(context, error!);
+            return;
+        }
+
+        await ExecuteSpeechAsync(context, speech, logger, ToSpeechRequest(values));
+    }
+
+    private static OpenAiSpeechRequest ToSpeechRequest(SpeechUrlValues values) => new()
+    {
+        Input = values.Input,
+        Voice = values.Voice,
+        ResponseFormat = values.Format,
+        Speed = values.Speed,
+        GainDb = values.GainDb
+    };
+
+    private static Task WriteSpeechUrlErrorAsync(HttpContext context, SpeechUrlError error) =>
+        WriteError(
+            context,
+            StatusCodes.Status400BadRequest,
+            error.Message,
+            "invalid_request_error",
+            error.Param,
+            error.Code);
+
+    private static async Task ExecuteSpeechAsync(
+        HttpContext context,
+        SpeechService speech,
+        ILogger logger,
+        OpenAiSpeechRequest request)
+    {
+        var cancellationToken = context.RequestAborted;
+
+        if (string.IsNullOrWhiteSpace(request.Input))
         {
             await WriteError(
                 context,

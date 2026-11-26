@@ -127,5 +127,7 @@ If the requested voice is unavailable, the server uses its default voice.
   Narrator voices and run `scripts\install-adapter.ps1`.
 - **`/v1/models` fails**: some clients call it before synthesis; the endpoint is
   implemented, so check the base URL includes `/v1`.
-- **App only accepts a raw URL, not an OpenAI base URL**: that app needs a
-  different adapter shape; the OpenAI surface is v1's only contract.
+- **App only accepts a raw URL, not an OpenAI base URL**: pass the endpoint path
+  directly. Values can live in the URL, for example
+  `http://127.0.0.1:5178/v1/voice/1/speed/1.2/text/Hello`; see
+  [Synthesis from a URL](reference.md#synthesis-from-a-url).

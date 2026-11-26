@@ -29,6 +29,7 @@ Working v0.1.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 - [HTTP API](#http-api)
   - [OpenAI client setup](#openai-client-setup)
   - [Synthesize speech](#synthesize-speech)
+  - [Synthesis from a URL](#synthesis-from-a-url)
   - [Request fields](#request-fields)
   - [Output formats](#output-formats)
   - [Models and voices](#models-and-voices)
@@ -281,9 +282,9 @@ winTTSas select "Microsoft Andrew"
 winTTSas select andrew
 ```
 
-Voice requests resolve in this order: `voiceMap` alias, exact name, exact slug,
-Azure-style name, OpenAI alias (`alloy`, `nova`, ...), substring match, then the
-default voice.
+Voice requests resolve in this order: 1-based index, `voiceMap` alias, exact
+name, exact slug, Azure-style name, OpenAI alias (`alloy`, `nova`, ...),
+substring match, then the default voice.
 
 ### Defaults
 
@@ -399,6 +400,10 @@ The OpenAI-compatible base URL is `http://127.0.0.1:5178/v1`.
 |---|---|---|
 | `POST` | `/v1/audio/speech` | OpenAI-compatible synthesis |
 | `POST` | `/audio/speech` | Alias without `/v1` |
+| `GET` | `/v1/audio/speech` | Synthesis from query parameters |
+| `GET` | `/audio/speech` | Alias without `/v1` |
+| `GET` | `/v1/{key}/{value}/...` | URL-only synthesis (see below) |
+| `GET` | `/audio/{key}/{value}/...` | Alias without `/v1` |
 | `GET` | `/v1/models` | `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` |
 | `GET` | `/v1/audio/voices` | Installed Windows voices |
 | `GET` | `/health` | Compact status |
@@ -502,12 +507,58 @@ console.log("rate: ", response.headers.get("x-winttsas-rate"));
 Browser code on another origin works: CORS allows any origin and exposes the
 `X-WinTTSas-*` headers.
 
+### Synthesis from a URL
+
+Some apps only let you paste a server URL or an endpoint path, with no JSON
+body. Those can drive synthesis entirely from the URL: either as query
+parameters on the speech endpoint, or as alternating key/value path segments.
+
+```powershell
+# Query parameters
+curl.exe -s "http://127.0.0.1:5178/v1/audio/speech?input=Hello&voice=1&speed=1.2&format=wav" -o hello.wav
+
+# Path segments; open this in a browser and it plays
+http://127.0.0.1:5178/v1/voice/1/speed/1.5/gain_db/-3/format/wav/text/Hello%20world
+```
+
+The `/audio/...` alias works the same way (for example
+`http://127.0.0.1:5178/audio/voice/andrew/text/Hello`).
+
+| Key | Aliases | Meaning |
+|---|---|---|
+| `input` | `text` | Text to speak; required |
+| `voice` | | SAPI name, slug, `voiceMap` alias, OpenAI alias, or 1-based index |
+| `speed` | | 0.25-4.0, overriding the CLI default |
+| `gain_db` | `gain`, `gaindb`, `volume` | -24 to +24 dB, overriding the CLI default |
+| `response_format` | `format` | `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm`, plus aliases |
+| `model` | | Accepted and ignored |
+
+Rules:
+
+- Keys are case-insensitive; values are URL-decoded.
+- Path segments must come in pairs, in any order. `voice/1/speed/1.5/text/Hi`
+  and `text/Hi/speed/1.5/voice/1` are equivalent.
+- When a key repeats, the last value wins. This also applies across aliases, so
+  `format=wav&response_format=mp3` returns mp3.
+- Unknown path keys, an odd number of path segments, and empty path values
+  return `400`. Unknown query parameters are ignored, so `?token=` and
+  cache-busting parameters are harmless.
+- Use a dot for decimals (`speed/1.5`); a comma is rejected.
+- Text is short by design: the whole URL must fit the HTTP request-line limit
+  (8 KB), so use the JSON endpoint for long input.
+- A `/` inside the text must be percent-encoded as `%2F`:
+  `/v1/text/AC%2FDC/speed/1` speaks `AC/DC`. In a query string, `+` means a
+  space, so write `%2B` for a literal plus.
+
+Values behave exactly like the JSON fields: `X-WinTTSas-*` headers, caching,
+and errors are identical.
+
 ### Request fields
 
 | Field | Behavior |
 |---|---|
-| `input` | Required, 1 to `maxTextLength` chars (default 4096) |
-| `voice` | OpenAI name, Azure-style name, SAPI name, slug, or `voiceMap` alias |
+| `input` | Required, 1 to `maxTextLength` chars (default 4096); `text` in URLs |
+| `voice` | OpenAI name, Azure-style name, SAPI name, slug, `voiceMap` alias, or 1-based index from `winTTSas list` |
 | `response_format` | `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm` |
 | `speed` | 0.25-4.0; overrides the CLI default; CLI speed is used when omitted |
 | `gain_db` | -24 to +24 dB; overrides the CLI gain. `gainDb` also accepted |
@@ -631,8 +682,9 @@ Errors use OpenAI's JSON shape:
 
 | Status | Meaning |
 |---|---|
-| `400` | Invalid or empty input, bad format, bad speed or gain |
+| `400` | Invalid or empty input, bad format, bad speed or gain, bad URL key/value |
 | `401` | Token configured but missing or wrong |
+| `414` | URL-based request exceeded the HTTP request-line limit; use the JSON endpoint |
 | `429` | Synthesis queue full; retry shortly (`Retry-After: 2`) |
 | `500` | Synthesis failure |
 | `503` | ffmpeg missing, or the bundled copy could not run |
@@ -795,6 +847,8 @@ Result: about 460 MB on disk, about 194 MB zipped.
 - No true streaming: audio is returned after synthesis.
 - No SSML or pitch controls in v1.
 - No text cleaning by default; input is spoken as sent.
+- URL-only requests are limited to short text by the HTTP request-line limit;
+  send long input to the JSON endpoint.
 - Gain is a default; the nonstandard `gain_db` request field can override it.
 - `mp3`/`opus`/`aac`/`flac`/`pcm` require ffmpeg; releases bundle it under
   `tools\ffmpeg`. Only a dev build without that folder falls back to `PATH`.
