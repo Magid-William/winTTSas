@@ -51,10 +51,10 @@ Working v0.1.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 ### Requirements
 
 - Windows 10 or 11, x64.
-- No .NET install and no ffmpeg install: release builds are self-contained and
-  bundle ffmpeg.
-- Natural voices require Narrator voices installed in Windows and a one-time
-  adapter registration.
+- Nothing else for the app itself: the release already contains the .NET
+  runtime and ffmpeg, so there is nothing to download or install.
+- Natural voices only: Narrator voices installed in Windows, plus the one-time
+  adapter registration below. Classic SAPI voices need neither.
 
 ### Release files
 
@@ -703,6 +703,9 @@ Logs and cache keys never contain plaintext text; cache keys are hashes of
 text/voice/rate/volume.
 
 ## Build from source
+
+The SDK and ffmpeg folder below are only needed to build; running a published
+release needs neither.
 
 Requires the .NET 8 SDK. A local build uses ffmpeg from `PATH` unless
 `tools\ffmpeg\ffmpeg.exe` is populated; releases always bundle it.
