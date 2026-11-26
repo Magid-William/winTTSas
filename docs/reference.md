@@ -69,6 +69,7 @@ winTTSas\
   tools\NaturalVoiceSAPIAdapter\
   scripts\install-adapter.ps1
   README.md
+  LICENSE
   docs\reference.md
 ```
 
@@ -795,6 +796,7 @@ dist\winTTSas\
   tools\ffmpeg\ffmpeg.exe bundled transcoder + LICENSE
   tools\NaturalVoiceSAPIAdapter\
   scripts\install-adapter.ps1
+  LICENSE
 ```
 
 Result: about 460 MB on disk, about 194 MB zipped.
@@ -882,5 +884,4 @@ docs/reference.md
   `docs\NaturalVoiceSAPIAdapter-LICENSE.txt`.
 - The .NET 8 runtime is MIT, © .NET Foundation and Contributors.
   `licenses\` holds Microsoft's `LICENSE.TXT` and third-party notices.
-- winTTSas itself has no license file yet; the source is all rights reserved by
-  default until one is added.
+- winTTSas itself is MIT, © 2026 Magid William; see [LICENSE](../LICENSE).

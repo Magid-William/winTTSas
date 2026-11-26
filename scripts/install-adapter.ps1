@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$AdapterDir = (Join-Path $PSScriptRoot '..\tools\NaturalVoiceSAPIAdapter'),
-    [string]$SourceDir = 'D:\Dev\Playground\Projects\Apps\readaloudFromClipboard\prior-art\tools\NaturalVoiceSAPIAdapter',
+    [string]$SourceDir = '',
     [switch]$Elevated
 )
 
@@ -11,7 +11,8 @@ $x64 = Join-Path $adapterDir 'x64\NaturalVoiceSAPIAdapter.dll'
 $x86 = Join-Path $adapterDir 'x86\NaturalVoiceSAPIAdapter.dll'
 
 if (-not (Test-Path $x64) -or -not (Test-Path $x86)) {
-    if (Test-Path (Join-Path $SourceDir 'x64\NaturalVoiceSAPIAdapter.dll')) {
+    if (-not [string]::IsNullOrWhiteSpace($SourceDir) -and
+        (Test-Path (Join-Path $SourceDir 'x64\NaturalVoiceSAPIAdapter.dll'))) {
         Write-Host "Copying adapter from $SourceDir"
         New-Item -ItemType Directory -Force -Path $adapterDir | Out-Null
         Copy-Item -Path (Join-Path $SourceDir '*') -Destination $adapterDir -Recurse -Force

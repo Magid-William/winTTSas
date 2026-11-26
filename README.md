@@ -186,7 +186,5 @@ winTTSas sample --speed=2 --gain=+2 "Equals syntax."
 - **.NET 8 runtime.** MIT, © .NET Foundation and Contributors. Self-contained
   builds embed it; `licenses\` contains Microsoft's `LICENSE.TXT` and
   third-party notices.
-- **This project.** No license file yet, so the source is all rights reserved by
-  default. Add a `LICENSE` (MIT or Apache-2.0 are common choices) before
-  publishing the source.
+- **This project.** MIT, © 2026 Magid William. See [LICENSE](LICENSE).
 - **No warranty.** Provided as-is, without support or liability.

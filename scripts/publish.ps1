@@ -63,6 +63,7 @@ New-Item -ItemType Directory -Force -Path $docsOut | Out-Null
 Copy-Item (Join-Path $root 'docs\*') $docsOut -Force
 
 Copy-Item (Join-Path $root 'README.md') $out -Force
+Copy-Item (Join-Path $root 'LICENSE') $out -Force
 
 # The self-contained exes embed the MIT-licensed .NET runtime. Keep Microsoft's
 # license and third-party notices with the release.
