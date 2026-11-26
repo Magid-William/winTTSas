@@ -64,6 +64,47 @@ Copy-Item (Join-Path $root 'docs\*') $docsOut -Force
 
 Copy-Item (Join-Path $root 'README.md') $out -Force
 
+# The self-contained exes embed the MIT-licensed .NET runtime. Keep Microsoft's
+# license and third-party notices with the release.
+$nugetRoot = if ($env:NUGET_PACKAGES) {
+    $env:NUGET_PACKAGES
+} else {
+    Join-Path $env:USERPROFILE '.nuget\packages'
+}
+
+$licenseOut = Join-Path $out 'licenses'
+New-Item -ItemType Directory -Force -Path $licenseOut | Out-Null
+
+function Copy-RuntimeFile {
+    param(
+        [string]$Package,
+        [string]$FileName,
+        [string]$TargetName
+    )
+
+    $packageDir = Join-Path $nugetRoot $Package
+    if (-not (Test-Path $packageDir)) {
+        Write-Warning "runtime pack not found: $packageDir"
+        return
+    }
+
+    $versionDir = Get-ChildItem $packageDir -Directory |
+        Sort-Object { [version]$_.Name } -Descending |
+        Select-Object -First 1
+
+    $source = Join-Path $versionDir.FullName $FileName
+    if (Test-Path $source) {
+        Copy-Item $source (Join-Path $licenseOut $TargetName) -Force
+    }
+    else {
+        Write-Warning "license file not found: $source"
+    }
+}
+
+Copy-RuntimeFile 'microsoft.netcore.app.runtime.win-x64' 'LICENSE.TXT' 'dotnet-LICENSE.TXT'
+Copy-RuntimeFile 'microsoft.netcore.app.runtime.win-x64' 'THIRD-PARTY-NOTICES.TXT' 'dotnet-THIRD-PARTY-NOTICES.TXT'
+Copy-RuntimeFile 'microsoft.aspnetcore.app.runtime.win-x64' 'THIRD-PARTY-NOTICES.TXT' 'aspnetcore-THIRD-PARTY-NOTICES.TXT'
+
 Write-Host "Published to $out"
 $total = (Get-ChildItem $out -Recurse -File | Measure-Object Length -Sum).Sum
 Write-Host ("Total size: {0:N0} MB" -f ($total / 1MB))
