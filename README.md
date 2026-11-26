@@ -51,7 +51,7 @@ The full CLI, API, and configuration reference is in
    ```
 
    No client or JSON needed either: open
-   <http://127.0.0.1:5178/v1/voice/1/speed/1.2/text/Hello%20from%20winTTSas>
+   <http://127.0.0.1:5178/v1/audio/speech/voice/1/speed/1.2/text/Hello%20from%20winTTSas>
    in a browser and it plays.
 
    If that is silent, run `.\winTTSas.exe sample --devices` and pass the right

@@ -58,7 +58,7 @@ try {
 
     $getPath = Join-Path $data 'smoke-get.wav'
     Invoke-WebRequest `
-        -Uri "http://127.0.0.1:$Port/v1/voice/1/speed/1.2/format/wav/text/Smoke%20GET%20path" `
+        -Uri "http://127.0.0.1:$Port/v1/audio/speech/voice/1/speed/1.2/format/wav/text/Smoke%20GET%20path" `
         -OutFile $getPath
 
     $getQuery = Join-Path $data 'smoke-get-query.mp3'

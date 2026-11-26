@@ -129,5 +129,6 @@ If the requested voice is unavailable, the server uses its default voice.
   implemented, so check the base URL includes `/v1`.
 - **App only accepts a raw URL, not an OpenAI base URL**: pass the endpoint path
   directly. Values can live in the URL, for example
-  `http://127.0.0.1:5178/v1/voice/1/speed/1.2/text/Hello`; see
+  `http://127.0.0.1:5178/v1/audio/speech/voice/1/speed/1.2/text/Hello`; GET and
+  POST both work. See
   [Synthesis from a URL](reference.md#synthesis-from-a-url).

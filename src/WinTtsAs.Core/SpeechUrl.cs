@@ -35,7 +35,8 @@ internal static class SpeechUrl
     /// <summary>
     /// Parses the alternating key/value segments of a URL such as
     /// <c>voice/1/speed/1.5/gain_db/-3/format/wav/text/Hello</c>.
-    /// Unknown keys and empty values are errors.
+    /// Unknown keys and empty values are errors; text may come from the query
+    /// string instead (see <see cref="TryApplyQueryFallback"/>).
     /// </summary>
     public static bool TryParsePath(
         string? segments,
@@ -45,13 +46,13 @@ internal static class SpeechUrl
         values = new SpeechUrlValues();
         error = null;
 
-        if (string.IsNullOrWhiteSpace(segments))
+        var trimmed = (segments ?? "").Trim('/');
+        if (trimmed.Length == 0)
         {
-            error = MissingText();
-            return false;
+            return true;
         }
 
-        var parts = segments.Split('/');
+        var parts = trimmed.Split('/');
         if (parts.Length % 2 != 0)
         {
             error = new SpeechUrlError(
@@ -99,14 +100,56 @@ internal static class SpeechUrl
             }
         }
 
-        if (string.IsNullOrWhiteSpace(values.Input))
+        return true;
+    }
+
+    /// <summary>
+    /// Fills fields that the path did not set from the query string, so
+    /// <c>/v1/audio/speech/voice/1/speed/1.2/?input=Hello</c> works. Path values
+    /// always win over query values.
+    /// </summary>
+    public static bool TryApplyQueryFallback(
+        SpeechUrlValues values,
+        IEnumerable<KeyValuePair<string, StringValues>> query,
+        out SpeechUrlError? error)
+    {
+        error = null;
+        if (query is null)
         {
-            error = MissingText();
-            return false;
+            return true;
+        }
+
+        foreach (var pair in query)
+        {
+            if (!TryMapKey(pair.Key, out var field) || !IsMissing(values, field))
+            {
+                continue;
+            }
+
+            var value = pair.Value.Count > 0 ? pair.Value[^1] ?? "" : "";
+            if (!Apply(values, field, value, out error))
+            {
+                return false;
+            }
         }
 
         return true;
     }
+
+    public static SpeechUrlError MissingTextError() => new(
+        $"text is required; add /text/<text>, ?input=..., or input in the JSON body. Accepted keys: {AcceptedKeys}",
+        "input",
+        "input_required_for_url");
+
+    private static bool IsMissing(SpeechUrlValues values, Field field) => field switch
+    {
+        Field.Input => values.Input is null,
+        Field.Voice => values.Voice is null,
+        Field.Format => values.Format is null,
+        Field.Speed => values.Speed is null,
+        Field.Gain => values.GainDb is null,
+        _ => false
+    };
 
     /// <summary>
     /// Parses query parameters such as <c>?input=Hello&amp;voice=1&amp;speed=1.2</c>.
@@ -121,6 +164,12 @@ internal static class SpeechUrl
         values = new SpeechUrlValues();
         error = null;
 
+        if (query is null)
+        {
+            return true;
+        }
+
+        // Query-only requests keep "last value wins" semantics.
         foreach (var pair in query)
         {
             if (!TryMapKey(pair.Key, out var field))
@@ -229,9 +278,4 @@ internal static class SpeechUrl
         segment.Contains("%2F", StringComparison.OrdinalIgnoreCase)
             ? segment.Replace("%2F", "/", StringComparison.OrdinalIgnoreCase)
             : segment;
-
-    private static SpeechUrlError MissingText() => new(
-        $"text is required; add /text/<text> (or ?input=...). Accepted keys: {AcceptedKeys}",
-        "input",
-        "input_required_for_url");
 }

@@ -8,7 +8,7 @@ app -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
      -> NaturalVoiceSAPIAdapter -> Narrator natural voices
 ```
 
-Working v0.1.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
+Working v0.1.1. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 
 ## Table of contents
 
@@ -132,7 +132,7 @@ cd C:\Tools\winTTSas
 the effective settings:
 
 ```
-winTTSas 0.1.0
+winTTSas 0.1.1
 state:    running (pid 14816)
 base URL: http://127.0.0.1:5178/v1
 voice:    Microsoft Andrew
@@ -403,8 +403,12 @@ The OpenAI-compatible base URL is `http://127.0.0.1:5178/v1`.
 | `POST` | `/audio/speech` | Alias without `/v1` |
 | `GET` | `/v1/audio/speech` | Synthesis from query parameters |
 | `GET` | `/audio/speech` | Alias without `/v1` |
-| `GET` | `/v1/{key}/{value}/...` | URL-only synthesis (see below) |
+| `GET` | `/v1/audio/speech/{key}/{value}/...` | URL-only synthesis nested under the endpoint |
+| `GET` | `/audio/speech/{key}/{value}/...` | Alias without `/v1` |
+| `GET` | `/v1/{key}/{value}/...` | Shorthand for the same thing |
 | `GET` | `/audio/{key}/{value}/...` | Alias without `/v1` |
+| `POST` | `/v1/audio/speech/{key}/{value}/...` | JSON body plus URL values |
+| `POST` | `/v1/{key}/{value}/...` | Shorthand for the same thing |
 | `GET` | `/v1/models` | `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` |
 | `GET` | `/v1/audio/voices` | Installed Windows voices |
 | `GET` | `/health` | Compact status |
@@ -511,19 +515,40 @@ Browser code on another origin works: CORS allows any origin and exposes the
 ### Synthesis from a URL
 
 Some apps only let you paste a server URL or an endpoint path, with no JSON
-body. Those can drive synthesis entirely from the URL: either as query
-parameters on the speech endpoint, or as alternating key/value path segments.
+body. Others send a normal JSON body but need values in the path. Both work:
+values can live in query parameters or in alternating key/value path segments,
+and the path forms accept GET (no body) and POST (JSON body).
 
 ```powershell
 # Query parameters
 curl.exe -s "http://127.0.0.1:5178/v1/audio/speech?input=Hello&voice=1&speed=1.2&format=wav" -o hello.wav
 
-# Path segments; open this in a browser and it plays
-http://127.0.0.1:5178/v1/voice/1/speed/1.5/gain_db/-3/format/wav/text/Hello%20world
+# Path segments nested under the speech endpoint; open in a browser and it plays
+http://127.0.0.1:5178/v1/audio/speech/voice/1/speed/1.5/gain_db/-3/format/wav/text/Hello%20world
+
+# The same segments work directly under /v1 as a shorthand
+curl.exe -s "http://127.0.0.1:5178/v1/voice/1/speed/1.5/text/Hello%20world" -o hello.mp3
 ```
 
-The `/audio/...` alias works the same way (for example
-`http://127.0.0.1:5178/audio/voice/andrew/text/Hello`).
+POST works too. Path and query values win over body fields; the body supplies
+whatever the URL omitted, usually just `input`:
+
+```powershell
+curl.exe -s -X POST "http://127.0.0.1:5178/v1/voice/1/speed/0.9" `
+  -H "Content-Type: application/json" `
+  -d '{"input":"Hello from the browser.","voice":"alloy","response_format":"mp3"}' `
+  -o hello.mp3
+```
+
+Here `voice/1` and `speed/0.9` win; `response_format` comes from the body.
+
+The `/audio/...` alias works the same way, with or without the `/speech`
+prefix (for example `http://127.0.0.1:5178/audio/speech/voice/andrew/text/Hello`).
+
+On the nested form, text and other missing values can also come from the query
+string: `/v1/audio/speech/voice/1/speed/1.2/?input=Hello`. Path values always
+win over query values, and both win over JSON body fields; the body only fills
+fields the URL did not set.
 
 | Key | Aliases | Meaning |
 |---|---|---|
@@ -537,8 +562,11 @@ The `/audio/...` alias works the same way (for example
 Rules:
 
 - Keys are case-insensitive; values are URL-decoded.
-- Path segments must come in pairs, in any order. `voice/1/speed/1.5/text/Hi`
-  and `text/Hi/speed/1.5/voice/1` are equivalent.
+- Path segments must come in pairs, in any order, and a trailing slash is
+  ignored. `voice/1/speed/1.5/text/Hi` and `text/Hi/speed/1.5/voice/1` are
+  equivalent.
+- GET works without a body; POST accepts a JSON body and uses its `input` when
+  the path has no text. URL values override body fields with the same name.
 - When a key repeats, the last value wins. This also applies across aliases, so
   `format=wav&response_format=mp3` returns mp3.
 - Unknown path keys, an odd number of path segments, and empty path values

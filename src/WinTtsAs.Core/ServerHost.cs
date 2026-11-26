@@ -306,11 +306,26 @@ public static class ServerHost
         app.MapPost("/audio/speech", (HttpContext context) =>
             HandleSpeechAsync(context, speech, logger));
 
+        app.MapPost("/v1/audio/speech/{**segments}", (HttpContext context) =>
+            HandleSpeechPostSegmentsAsync(context, speech, logger));
+
+        app.MapPost("/audio/speech/{**segments}", (HttpContext context) =>
+            HandleSpeechPostSegmentsAsync(context, speech, logger));
+
+        app.MapPost("/v1/{**segments}", (HttpContext context) =>
+            HandleSpeechPostSegmentsAsync(context, speech, logger));
+
         app.MapGet("/v1/audio/speech", (HttpContext context) =>
             HandleSpeechQueryAsync(context, speech, logger));
 
         app.MapGet("/audio/speech", (HttpContext context) =>
             HandleSpeechQueryAsync(context, speech, logger));
+
+        app.MapGet("/v1/audio/speech/{**segments}", (HttpContext context) =>
+            HandleSpeechSegmentsAsync(context, speech, logger));
+
+        app.MapGet("/audio/speech/{**segments}", (HttpContext context) =>
+            HandleSpeechSegmentsAsync(context, speech, logger));
 
         app.MapGet("/v1/{**segments}", (HttpContext context) =>
             HandleSpeechSegmentsAsync(context, speech, logger));
@@ -424,7 +439,80 @@ public static class ServerHost
             return;
         }
 
+        if (!SpeechUrl.TryApplyQueryFallback(values, context.Request.Query, out error))
+        {
+            await WriteSpeechUrlErrorAsync(context, error!);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(values.Input))
+        {
+            await WriteSpeechUrlErrorAsync(context, SpeechUrl.MissingTextError());
+            return;
+        }
+
         await ExecuteSpeechAsync(context, speech, logger, ToSpeechRequest(values));
+    }
+
+    private static async Task HandleSpeechPostSegmentsAsync(
+        HttpContext context,
+        SpeechService speech,
+        ILogger logger)
+    {
+        var segments = context.Request.RouteValues.TryGetValue("segments", out var value)
+            ? value as string
+            : null;
+
+        if (!SpeechUrl.TryParsePath(segments, out var values, out var error))
+        {
+            await WriteSpeechUrlErrorAsync(context, error!);
+            return;
+        }
+
+        if (!SpeechUrl.TryApplyQueryFallback(values, context.Request.Query, out error))
+        {
+            await WriteSpeechUrlErrorAsync(context, error!);
+            return;
+        }
+
+        OpenAiSpeechRequest? body = null;
+        if (context.Request.ContentLength.GetValueOrDefault() > 0 ||
+            context.Request.Headers.TransferEncoding.Count > 0)
+        {
+            try
+            {
+                body = await JsonSerializer.DeserializeAsync<OpenAiSpeechRequest>(
+                    context.Request.Body,
+                    JsonOptions,
+                    context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                await WriteError(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    "Invalid JSON body.",
+                    "invalid_request_error");
+                return;
+            }
+        }
+
+        // URL values win over body defaults; the body fills whatever the URL
+        // did not set.
+        var request = body ?? new OpenAiSpeechRequest();
+        request.Input = values.Input ?? request.Input;
+        request.Voice = values.Voice ?? request.Voice;
+        request.ResponseFormat = values.Format ?? request.ResponseFormat;
+        request.Speed = values.Speed ?? request.Speed;
+        request.GainDb = values.GainDb ?? request.GainDb;
+
+        if (string.IsNullOrWhiteSpace(request.Input))
+        {
+            await WriteSpeechUrlErrorAsync(context, SpeechUrl.MissingTextError());
+            return;
+        }
+
+        await ExecuteSpeechAsync(context, speech, logger, request);
     }
 
     private static OpenAiSpeechRequest ToSpeechRequest(SpeechUrlValues values) => new()
