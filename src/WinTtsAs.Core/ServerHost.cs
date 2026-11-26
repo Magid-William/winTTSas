@@ -315,6 +315,9 @@ public static class ServerHost
         app.MapPost("/v1/{**segments}", (HttpContext context) =>
             HandleSpeechPostSegmentsAsync(context, speech, logger));
 
+        app.MapPost("/audio/{**segments}", (HttpContext context) =>
+            HandleSpeechPostSegmentsAsync(context, speech, logger));
+
         app.MapGet("/v1/audio/speech", (HttpContext context) =>
             HandleSpeechQueryAsync(context, speech, logger));
 
