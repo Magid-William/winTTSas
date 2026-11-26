@@ -21,8 +21,13 @@ Aria/Guy/Jenny/Ryan/Sonia can be installed later from
 .\dist\winTTSas\winTTSas.exe sample "Hello from winTTSas."
 .\dist\winTTSas\winTTSas.exe sample --devices
 .\dist\winTTSas\winTTSas.exe sample --device 1 "Hello on the speakers."
+.\dist\winTTSas\winTTSas.exe sample "Faster and louder." --speed 2 --volume +6
 .\dist\winTTSas\winTTSas.exe status
 ```
+
+`sample` options: `--speed`, `--volume`/`--gain` (dB), `--level` (SAPI
+0-100), `--voice`, `--device`, `--devices`, `--help`, and `--` to end options.
+They apply to that sample only; config is not changed.
 
 `--device 1` above was the Realtek speakers on this machine; use the index
 printed by `sample --devices`. If the sample is silent, Windows may be routing
@@ -136,7 +141,7 @@ Audio is normalized to 24 kHz mono. Responses include `X-WinTTSas-Voice`,
 | `winTTSas start` | Start the hidden server; print URL/voice/format/speed |
 | `winTTSas start --foreground` | Run the server in this console |
 | `winTTSas stop` | Graceful shutdown; force-kill fallback |
-| `winTTSas sample [--device N] [text]` | Speak a sentence aloud; `--devices` lists outputs |
+| `winTTSas sample [options] [text]` | Speak a sentence aloud; flags override voice/speed/gain/device |
 | `winTTSas status [--json]` | State, PID, URL, voice, format, speed, queue, logon |
 | `winTTSas list [--json]` | Installed SAPI voices |
 | `winTTSas select <index, name, or slug>` | Set default voice; live reload |

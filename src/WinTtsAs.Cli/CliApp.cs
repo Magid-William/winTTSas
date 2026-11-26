@@ -74,7 +74,7 @@ winTTSas {BuildInfo.Version} - local OpenAI-compatible TTS for Windows voices
 Usage:
   winTTSas start [--foreground] [--quiet]
   winTTSas stop
-  winTTSas sample [--device N] [text]
+  winTTSas sample [options] [text]
   winTTSas sample --devices
   winTTSas volume [dB]
   winTTSas status [--json]
@@ -221,66 +221,152 @@ Notes:
         string[] args,
         CancellationToken cancellationToken)
     {
-        var config = ConfigStore.Load();
-        var catalog = VoiceCatalog.Load();
-        var voice = catalog.Resolve(config.DefaultVoice, config);
-
-        if (voice is null)
-        {
-            Console.Error.WriteLine("no SAPI voices are installed.");
-            return 1;
-        }
-
         var textParts = new List<string>();
         int? deviceIndex = null;
+        double? speedOverride = null;
+        double? gainOverride = null;
+        int? levelOverride = null;
+        string? voiceQuery = null;
+        var parseOptions = true;
 
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
 
-            if (arg.Equals("--devices", StringComparison.OrdinalIgnoreCase))
+            if (!parseOptions)
             {
-                var devices = WaveOutPlayer.GetDevices();
-                if (devices.Count == 0)
-                {
-                    Console.Error.WriteLine("no audio output devices found.");
-                    return 1;
-                }
+                textParts.Add(arg);
+                continue;
+            }
 
-                foreach (var item in devices)
-                {
-                    Console.WriteLine($"{item.Index,2}  {item.Name}");
-                }
+            if (arg == "--")
+            {
+                parseOptions = false;
+                continue;
+            }
 
+            if (arg.Equals("--help", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("-h", StringComparison.OrdinalIgnoreCase))
+            {
+                PrintSampleHelp();
                 return 0;
             }
 
-            if (arg.Equals("--device", StringComparison.OrdinalIgnoreCase))
+            if (arg.Equals("--devices", StringComparison.OrdinalIgnoreCase))
             {
-                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out var parsed))
+                return PrintAudioDevices();
+            }
+
+            if (TryReadOption(args, ref i, "--device", out var deviceValue))
+            {
+                if (!int.TryParse(deviceValue, out var parsedDevice) || parsedDevice < 0)
                 {
-                    Console.Error.WriteLine("usage: winTTSas sample --device <index> [text]");
-                    return 1;
+                    return SampleUsageError("--device <index>");
                 }
 
-                deviceIndex = parsed;
-                i++;
+                deviceIndex = parsedDevice;
                 continue;
             }
 
-            if (arg.StartsWith("--device=", StringComparison.OrdinalIgnoreCase))
+            if (TryReadOption(args, ref i, "--speed", out var speedValue))
             {
-                if (!int.TryParse(arg["--device=".Length..], out var parsed))
+                if (!double.TryParse(
+                        speedValue,
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out var parsedSpeed) ||
+                    !double.IsFinite(parsedSpeed) ||
+                    parsedSpeed is < 0.25 or > 4.0)
                 {
-                    Console.Error.WriteLine("usage: winTTSas sample --device <index> [text]");
-                    return 1;
+                    return SampleUsageError("--speed <0.25-4.0>");
                 }
 
-                deviceIndex = parsed;
+                speedOverride = parsedSpeed;
                 continue;
+            }
+
+            if (TryReadOption(args, ref i, "--volume", out var gainValue) ||
+                TryReadOption(args, ref i, "--gain", out gainValue))
+            {
+                if (!double.TryParse(
+                        gainValue,
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out var parsedGain) ||
+                    !double.IsFinite(parsedGain) ||
+                    parsedGain is < -24.0 or > 24.0)
+                {
+                    return SampleUsageError("--volume <dB> or --gain <dB>");
+                }
+
+                gainOverride = Math.Round(parsedGain, 1);
+                continue;
+            }
+
+            if (TryReadOption(args, ref i, "--level", out var levelValue))
+            {
+                if (!int.TryParse(levelValue, out var parsedLevel) ||
+                    parsedLevel is < 0 or > 100)
+                {
+                    return SampleUsageError("--level <0-100>");
+                }
+
+                levelOverride = parsedLevel;
+                continue;
+            }
+
+            if (TryReadOption(args, ref i, "--voice", out var voiceValue))
+            {
+                if (string.IsNullOrWhiteSpace(voiceValue))
+                {
+                    return SampleUsageError("--voice <index|name|slug>");
+                }
+
+                voiceQuery = voiceValue;
+                continue;
+            }
+
+            if (arg.StartsWith("-", StringComparison.Ordinal))
+            {
+                return SampleUsageError(null, $"unknown option: {arg}");
             }
 
             textParts.Add(arg);
+        }
+
+        var config = ConfigStore.Load();
+        var catalog = VoiceCatalog.Load();
+
+        VoiceDescriptor? voice;
+        if (string.IsNullOrWhiteSpace(voiceQuery))
+        {
+            voice = catalog.Resolve(config.DefaultVoice, config);
+        }
+        else
+        {
+            voice = null;
+
+            if (int.TryParse(voiceQuery, out var voiceIndex) &&
+                voiceIndex >= 1 &&
+                voiceIndex <= catalog.Voices.Count)
+            {
+                voice = catalog.Voices[voiceIndex - 1];
+            }
+
+            voice ??= catalog.FindExact(voiceQuery);
+
+            if (voice is null)
+            {
+                Console.Error.WriteLine($"voice not found: {voiceQuery}");
+                Console.Error.WriteLine("run: winTTSas list");
+                return 1;
+            }
+        }
+
+        if (voice is null)
+        {
+            Console.Error.WriteLine("no SAPI voices are installed.");
+            return 1;
         }
 
         if (deviceIndex is not null)
@@ -314,12 +400,15 @@ Notes:
             return 1;
         }
 
-        var rate = SpeechRate.FromSpeed(config.DefaultSpeed);
+        var speed = speedOverride ?? config.DefaultSpeed;
+        var gainDb = gainOverride ?? config.GainDb;
+        var level = levelOverride ?? config.Volume;
+        var rate = SpeechRate.FromSpeed(speed);
 
         Console.WriteLine($"voice:  {voice.Name}");
-        Console.WriteLine($"speed:  {config.DefaultSpeed:0.00} (SAPI rate {rate})");
-        Console.WriteLine($"gain:   {FormatGain(config.GainDb)} dB");
-        Console.WriteLine($"volume: {config.Volume}");
+        Console.WriteLine($"speed:  {speed:0.00} (SAPI rate {rate})");
+        Console.WriteLine($"gain:   {FormatGain(gainDb)} dB");
+        Console.WriteLine($"level:  {level}");
         Console.WriteLine($"text:   {text}");
         Console.WriteLine();
         Console.WriteLine("speaking...");
@@ -328,29 +417,29 @@ Notes:
             voice.Name,
             text,
             rate,
-            config.Volume);
+            level);
 
-        if (Math.Abs(config.GainDb) >= 0.05)
+        if (Math.Abs(gainDb) >= 0.05)
         {
+            var ffmpeg = new FfmpegTranscoder(config.FfmpegPath, config.Mp3Bitrate);
+            if (!ffmpeg.IsAvailable)
+            {
+                Console.Error.WriteLine("error: ffmpeg is required for non-zero gain.");
+                return 1;
+            }
+
             try
             {
-                var ffmpeg = new FfmpegTranscoder(config.FfmpegPath, config.Mp3Bitrate);
-                if (ffmpeg.IsAvailable)
-                {
-                    wav = await ffmpeg.ToFormatAsync(
-                        wav,
-                        "wav",
-                        config.GainDb,
-                        cancellationToken);
-                }
-                else
-                {
-                    Console.Error.WriteLine("warning: ffmpeg not found; playing without gain.");
-                }
+                wav = await ffmpeg.ToFormatAsync(
+                    wav,
+                    "wav",
+                    gainDb,
+                    cancellationToken);
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine("warning: gain failed: " + ex.Message);
+                Console.Error.WriteLine("error: gain processing failed: " + ex.Message);
+                return 1;
             }
         }
 
@@ -358,6 +447,88 @@ Notes:
 
         Console.WriteLine("done.");
         return 0;
+    }
+
+    private static bool TryReadOption(
+        string[] args,
+        ref int index,
+        string option,
+        out string? value)
+    {
+        var arg = args[index];
+
+        if (arg.Equals(option, StringComparison.OrdinalIgnoreCase))
+        {
+            if (index + 1 >= args.Length)
+            {
+                value = null;
+                return true;
+            }
+
+            value = args[++index];
+            return true;
+        }
+
+        var prefix = option + "=";
+        if (arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            value = arg[prefix.Length..];
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static int PrintAudioDevices()
+    {
+        var devices = WaveOutPlayer.GetDevices();
+        if (devices.Count == 0)
+        {
+            Console.Error.WriteLine("no audio output devices found.");
+            return 1;
+        }
+
+        foreach (var item in devices)
+        {
+            Console.WriteLine($"{item.Index,2}  {item.Name}");
+        }
+
+        return 0;
+    }
+
+    private static int SampleUsageError(string? usage, string? message = null)
+    {
+        if (message is not null)
+        {
+            Console.Error.WriteLine(message);
+        }
+
+        Console.Error.WriteLine("usage: winTTSas sample [options] [text]");
+        if (usage is not null)
+        {
+            Console.Error.WriteLine($"  {usage}");
+        }
+
+        Console.Error.WriteLine("run: winTTSas sample --help");
+        return 1;
+    }
+
+    private static void PrintSampleHelp()
+    {
+        Console.WriteLine("""
+Usage: winTTSas sample [options] [text]
+
+Options:
+  --speed <0.25-4.0>       Override speed for this sample
+  --volume <dB>            Override gain in dB (alias: --gain)
+  --level <0-100>          Override SAPI volume
+  --voice <index|name|slug>  Select a voice
+  --device <index>         Play on a specific output device
+  --devices                List audio output devices
+  --help                   Show this help
+  --                       Stop parsing options; the rest is text
+""");
     }
 
     private static async Task<int> StopAsync(CancellationToken cancellationToken)
