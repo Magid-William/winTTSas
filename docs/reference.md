@@ -44,7 +44,7 @@ Working v0.1.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 - [Troubleshooting](#troubleshooting)
 - [Limitations](#limitations)
 - [Layout](#layout)
-- [Third-party](#third-party)
+- [Licenses](#licenses)
 
 ## Installation and setup
 
@@ -819,7 +819,7 @@ docs/openai-clients.md
 docs/reference.md
 ```
 
-## Third-party
+## Licenses
 
 - `tools\ffmpeg` is a GPLv3 ffmpeg build from gyan.dev. The bundle includes its
   `LICENSE` and `README-ffmpeg.txt` with the exact source commit and build

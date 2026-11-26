@@ -166,7 +166,7 @@ winTTSas sample -- "--dashes are spoken as text"
 winTTSas sample --speed=2 --gain=+2 "Equals syntax."
 ```
 
-## Legal
+## Licenses
 
 - **Windows voices.** winTTSas calls the voices installed on the machine
   through the Windows SAPI API. It does not include or redistribute voice data
