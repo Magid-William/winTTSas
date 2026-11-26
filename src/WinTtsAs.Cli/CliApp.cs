@@ -989,6 +989,10 @@ Options:
         Console.WriteLine($"logon:    {(IsLogonEnabled() ? "on" : "off")}");
         Console.WriteLine($"adapter:  {status.Adapter}");
         Console.WriteLine($"ffmpeg:   {status.Ffmpeg}");
+        if (!string.IsNullOrWhiteSpace(status.FfmpegPath))
+        {
+            Console.WriteLine($"binary:   {status.FfmpegPath}");
+        }
         Console.WriteLine($"logs:     {status.LogDir}");
     }
 

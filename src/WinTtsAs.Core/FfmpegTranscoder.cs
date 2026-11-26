@@ -19,13 +19,14 @@ public sealed class FfmpegTranscoder
 
     public FfmpegTranscoder(string path, string mp3Bitrate, ILogger? log = null)
     {
-        _path = string.IsNullOrWhiteSpace(path) ? "ffmpeg" : path.Trim();
+        _path = AppPaths.ResolveFfmpegPath(path);
         _mp3Bitrate = string.IsNullOrWhiteSpace(mp3Bitrate) ? "64k" : mp3Bitrate.Trim();
         _log = log;
         IsAvailable = Probe();
     }
 
     public bool IsAvailable { get; }
+    public string ResolvedPath => _path;
     public string? Version { get; private set; }
 
     public async Task<byte[]> ToFormatAsync(
@@ -45,7 +46,8 @@ public sealed class FfmpegTranscoder
         if (!IsAvailable)
         {
             throw new FfmpegUnavailableException(
-                $"ffmpeg is required for {format} or gain; install ffmpeg or set FfmpegPath.");
+                $"ffmpeg is required for {format} or gain; the bundled copy is missing " +
+                "and no ffmpeg was found on PATH. Reinstall winTTSas or set FfmpegPath.");
         }
 
         // A WAV written to a pipe has placeholder RIFF/data sizes because ffmpeg

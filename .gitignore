@@ -22,6 +22,9 @@ cache/
 # NaturalVoiceSAPIAdapter binaries (MIT; copied/downloaded locally)
 tools/NaturalVoiceSAPIAdapter/
 
+# ffmpeg binaries (GPL build; copied locally and bundled by publish.ps1)
+tools/ffmpeg/
+
 # Windows
 Thumbs.db
 Desktop.ini

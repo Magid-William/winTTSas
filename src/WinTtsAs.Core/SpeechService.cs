@@ -35,6 +35,10 @@ public sealed class SpeechService : IAsyncDisposable
         _pool = new SapiWorkerPool(config.Workers, config.QueueLimit, log);
         _cache = new AudioCache(AppPaths.CacheDir, config.CacheMaxMb, config.CacheEnabled, log);
         _ffmpeg = new FfmpegTranscoder(config.FfmpegPath, config.Mp3Bitrate, log);
+        _log.LogInformation(
+            "ffmpeg: {Path} ({State})",
+            _ffmpeg.ResolvedPath,
+            _ffmpeg.IsAvailable ? "ok" : "unavailable");
     }
 
     public AppConfig Config => _config;
@@ -42,6 +46,7 @@ public sealed class SpeechService : IAsyncDisposable
     public int NaturalVoices => _catalog.NaturalCount;
     public VoiceDescriptor? DefaultVoice => _catalog.Resolve(_config.DefaultVoice, _config);
     public bool FfmpegAvailable => _ffmpeg.IsAvailable;
+    public string FfmpegPath => _ffmpeg.ResolvedPath;
     public string FfmpegVersion => _ffmpeg.IsAvailable
         ? _ffmpeg.Version ?? "available"
         : "unavailable";
@@ -190,6 +195,7 @@ public sealed class SpeechService : IAsyncDisposable
             UptimeSeconds = (DateTimeOffset.UtcNow - _startedAt).TotalSeconds,
             Version = BuildInfo.Version,
             Ffmpeg = FfmpegVersion,
+            FfmpegPath = _ffmpeg.ResolvedPath,
             Adapter = adapter.Detail,
             LogDir = AppPaths.LogDir,
             ConfigFile = AppPaths.ConfigFile

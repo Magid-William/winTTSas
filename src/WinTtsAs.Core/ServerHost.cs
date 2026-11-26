@@ -295,6 +295,7 @@ public static class ServerHost
             adapter = AdapterProbe.Get(),
             voices = speech.Voices,
             ffmpeg = speech.FfmpegVersion,
+            ffmpegPath = speech.FfmpegPath,
             cache = new { enabled = speech.Config.CacheEnabled, files = speech.CacheCount, bytes = speech.CacheSizeBytes },
             status = speech.GetStatus()
         }));

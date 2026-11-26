@@ -31,6 +31,37 @@ public static class AppPaths
     public static string AdapterX86Dll =>
         Path.Combine(AdapterDir, "x86", "NaturalVoiceSAPIAdapter.dll");
 
+    public static string FfmpegDir =>
+        Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg");
+
+    public static string ResolveFfmpegPath(string? configured)
+    {
+        var value = string.IsNullOrWhiteSpace(configured) ? "ffmpeg" : configured.Trim();
+
+        // An explicit path (absolute, relative, or bare with directories) wins.
+        if (value.Contains('\\') || value.Contains('/') || value.Contains(':'))
+        {
+            return value;
+        }
+
+        var bundled = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe"),
+            Path.Combine(FfmpegDir, "ffmpeg.exe")
+        };
+
+        foreach (var candidate in bundled)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        // Fall back to a PATH lookup when no bundled copy is present.
+        return value;
+    }
+
     public static string BaseUrl(int port, string bind = "127.0.0.1")
     {
         var host = string.IsNullOrWhiteSpace(bind) || bind == "0.0.0.0" || bind == "::"

@@ -121,7 +121,8 @@ If the requested voice is unavailable, the server uses its default voice.
 ## Troubleshooting
 
 - **401**: a token is configured; send it as `Authorization: Bearer <token>`.
-- **503 for mp3/opus/etc.**: ffmpeg is missing from `PATH`.
+- **503 for mp3/opus/etc.**: the bundled `tools\ffmpeg\ffmpeg.exe` is missing or
+  `FfmpegPath` points elsewhere. `winTTSas status` shows the resolved binary.
 - **Robotic voice**: `/v1/audio/voices` is falling back to David/Zira. Install
   Narrator voices and run `scripts\install-adapter.ps1`.
 - **`/v1/models` fails**: some clients call it before synthesis; the endpoint is

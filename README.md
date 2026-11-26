@@ -66,29 +66,51 @@ A browser test form is at `http://127.0.0.1:5178/`.
 
 ## Build
 
-Requires the .NET 8 SDK and ffmpeg on `PATH` for compressed formats or any
-non-zero gain; plain WAV at 0 dB needs no ffmpeg.
+Requires the .NET 8 SDK. A local build uses `ffmpeg` from `PATH` unless
+`tools\ffmpeg\ffmpeg.exe` is populated; releases always bundle it.
 
 ```powershell
 dotnet build
 dotnet run --project src\WinTtsAs.Cli -- start --foreground
 ```
 
-Publish the two-exe layout:
+Publish a self-contained two-exe layout:
 
 ```powershell
 .\scripts\publish.ps1
 ```
 
+The first self-contained publish downloads the .NET runtime packs from NuGet
+(~100 MB, one time). The result needs no .NET install and no ffmpeg on `PATH`.
+
+Populate the gitignored ffmpeg folder once before publishing:
+
+```powershell
+New-Item -ItemType Directory -Force tools\ffmpeg | Out-Null
+Copy-Item C:\path\to\ffmpeg.exe tools\ffmpeg\
+Copy-Item C:\path\to\LICENSE tools\ffmpeg\LICENSE
+```
+
+Use a static build. This project was tested with the gyan.dev 9.1 full build
+(GPLv3); its license is copied into the bundle.
+
 Output:
 
 ```
 dist\winTTSas\
-  winTTSas.exe            CLI
-  winTTSas-server.exe     hidden HTTP server
+  winTTSas.exe            CLI, self-contained
+  winTTSas-server.exe     hidden HTTP server, self-contained
+  tools\ffmpeg\ffmpeg.exe bundled transcoder + LICENSE
   tools\NaturalVoiceSAPIAdapter\
   scripts\install-adapter.ps1
 ```
+
+### What a release needs from the user
+
+- Windows 10/11 x64. No .NET install and no ffmpeg install.
+- Natural voices: install Narrator voices, then run
+  `scripts\install-adapter.ps1` once, elevated. Classic SAPI voices work
+  without the adapter.
 
 ## Natural voice adapter
 
@@ -195,6 +217,7 @@ src/WinTtsAs.Cli/        winTTSas.exe
 src/WinTtsAs.Server/     winTTSas-server.exe
 tests/                   (not yet scaffolded)
 tools/NaturalVoiceSAPIAdapter/    copied/downloaded, gitignored
+tools/ffmpeg/            bundled ffmpeg.exe + LICENSE, gitignored
 scripts/install-adapter.ps1
 scripts/publish.ps1
 scripts/smoke.ps1
@@ -211,6 +234,9 @@ docs/openai-clients.md
   routing to a Bluetooth headset. Choose the speaker index or change the default
   output device.
 - **401**: the configured token must be sent as `Authorization: Bearer ...`.
+- **503 "ffmpeg is required"**: the bundled `tools\ffmpeg\ffmpeg.exe` is
+  missing, or `FfmpegPath` points somewhere else. `winTTSas status` prints the
+  resolved binary path; `/doctor` returns it as `ffmpegPath`.
 
 ## Limitations
 
@@ -218,7 +244,13 @@ docs/openai-clients.md
 - No SSML/pitch controls in v1.
 - No text cleaning by default; input is spoken as sent.
 - Gain is a CLI default; the nonstandard `gain_db` request field can override it.
-- `mp3`/`opus`/`aac`/`flac`/`pcm` require ffmpeg; `wav` only requires it when
-  gain is active.
+- `mp3`/`opus`/`aac`/`flac`/`pcm` require ffmpeg; releases bundle it under
+  `tools\ffmpeg`. Only a dev build without that folder falls back to `PATH`.
 - NaturalVoiceSAPIAdapter is an unsupported shim; Windows updates can break it.
 - Stored Narrator HD voices are only partially supported by the adapter.
+
+## Third-party
+
+- `tools\ffmpeg` is a GPLv3 ffmpeg build from gyan.dev. The bundle includes
+  its `LICENSE` and `README-ffmpeg.txt` with the source link.
+- NaturalVoiceSAPIAdapter is MIT; see its repository.
