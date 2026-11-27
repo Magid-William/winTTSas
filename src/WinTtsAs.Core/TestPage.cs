@@ -21,6 +21,8 @@ public static class TestPage
     button { margin-top: 1rem; padding: .6rem 1.2rem; font: inherit; cursor: pointer; }
     #status { margin-left: .75rem; color: #888; }
     audio { width: 100%; margin-top: 1rem; }
+    .check { display: flex; align-items: center; gap: .5rem; font-weight: 600; }
+    .check input { width: auto; margin: 0; }
   </style>
 </head>
 <body>
@@ -55,6 +57,11 @@ public static class TestPage
   <label for="key">API key (only if a token is configured)</label>
   <input id="key" type="password" autocomplete="off" placeholder="local">
 
+  <label class="check" for="sanitize">
+    <input id="sanitize" type="checkbox" checked>
+    Sanitize Markdown, URLs, and symbols
+  </label>
+
   <div>
     <button id="speak">Synthesize</button>
     <span id="status"></span>
@@ -85,7 +92,8 @@ public static class TestPage
         input: $('text').value,
         voice: $('voice').value,
         response_format: $('format').value,
-        speed: parseFloat($('speed').value) || 1
+        speed: parseFloat($('speed').value) || 1,
+        sanitize: $('sanitize').checked
       };
       const headers = { 'Content-Type': 'application/json' };
       if (key) headers.Authorization = 'Bearer ' + key;
