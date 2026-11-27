@@ -37,6 +37,41 @@ public static class WavConcatenator
         return Build(format!, data.ToArray());
     }
 
+    /// <summary>
+    /// Adds silence before the audio. Useful when an output device (Bluetooth
+    /// headsets in particular) takes a moment to wake and clips the first
+    /// phonemes of a short clip.
+    /// </summary>
+    public static byte[] PrependSilence(byte[] wav, int milliseconds)
+    {
+        if (milliseconds <= 0 || wav.Length == 0)
+        {
+            return wav;
+        }
+
+        var (format, data) = Parse(wav);
+        if (format.Length < 12)
+        {
+            return wav;
+        }
+
+        var bytesPerSecond = BitConverter.ToUInt32(format, 8);
+        if (bytesPerSecond == 0)
+        {
+            return wav;
+        }
+
+        var silence = (int)Math.Min(int.MaxValue, (long)bytesPerSecond * milliseconds / 1000);
+        if (silence <= 0)
+        {
+            return wav;
+        }
+
+        var combined = new byte[silence + data.Length];
+        data.CopyTo(combined, silence);
+        return Build(format, combined);
+    }
+
     private static (byte[] Format, byte[] Data) Parse(byte[] wav)
     {
         if (wav.Length < 12 ||

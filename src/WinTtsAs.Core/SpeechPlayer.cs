@@ -21,10 +21,15 @@ public sealed class SpeechPlayer : IDisposable
 
     public bool IsPlaying => _playing;
 
+    private const int LeadInMilliseconds = 300;
+
     public void Play(byte[] wav, int? deviceIndex = null)
     {
         Stop();
 
+        // Bluetooth headsets and idle endpoints can swallow the first ~100 ms
+        // of a stream, which cuts the first phoneme of a short clip.
+        var clip = WavConcatenator.PrependSilence(wav, LeadInMilliseconds);
         var cts = new CancellationTokenSource();
         int generation;
         lock (_gate)
@@ -34,7 +39,7 @@ public sealed class SpeechPlayer : IDisposable
             _playing = true;
         }
 
-        var thread = new Thread(() => Run(wav, deviceIndex, cts, generation))
+        var thread = new Thread(() => Run(clip, deviceIndex, cts, generation))
         {
             IsBackground = true,
             Name = "winTTSas-speech"
