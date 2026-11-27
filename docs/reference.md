@@ -8,7 +8,7 @@ app -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
      -> NaturalVoiceSAPIAdapter -> Narrator natural voices
 ```
 
-Working v0.2.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
+Working v0.3.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 
 ## Table of contents
 
@@ -24,6 +24,7 @@ Working v0.2.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
   - [Voices](#voices)
   - [Defaults](#defaults)
   - [Sample playback](#sample-playback)
+  - [Sanitization](#sanitization)
   - [Autostart and uninstall](#autostart-and-uninstall)
   - [JSON output](#json-output)
 - [HTTP API](#http-api)
@@ -132,7 +133,7 @@ cd C:\Tools\winTTSas
 the effective settings:
 
 ```
-winTTSas 0.2.0
+winTTSas 0.3.0
 state:    running (pid 14816)
 base URL: http://127.0.0.1:5178/v1
 voice:    Microsoft Andrew
@@ -333,6 +334,7 @@ and never changes config. Values resolve as `flag -> config -> built-in`.
 | `--voice <index\|name\|slug>` | Strict voice selection |
 | `--save <path>` | Write to a file instead of playing (alias `-o`) |
 | `--format <format>` | Output format for `--save`; inferred from the extension |
+| `--raw` | Skip markdown and symbol sanitization |
 | `--device <n>` | Output device index |
 | `--devices` | List output devices and exit |
 | `--help` | Sample usage |
@@ -350,6 +352,7 @@ winTTSas sample --voice andrew --speed 1.5 --gain 6 --device 1
 winTTSas sample --level 80 --device 1 "SAPI level test"
 winTTSas sample --speed=2 --gain=+2 "Equals syntax"
 winTTSas sample -- "Text that starts with --dashes"
+winTTSas sample --raw "## Literal — text"
 
 # Save instead of play; format comes from the extension
 winTTSas sample "Hello" --save hello.mp3
@@ -368,6 +371,57 @@ machine; use the indices from `sample --devices`.
 from `--format`, otherwise the file extension, otherwise the CLI default.
 Parent directories are created and existing files are overwritten. Rendering
 does not require the server; only ffmpeg is used for non-WAV output or gain.
+
+### Sanitization
+
+LLM and Markdown output is converted to speech-friendly text before synthesis.
+This is enabled by default for the server and `sample`.
+
+Settings in `config.json`:
+
+| Key | Default | Values |
+|---|---|---|
+| `sanitize` | `true` | on/off |
+| `markdown` | `auto` | `auto`, `on`, `off` |
+| `urlMode` | `link` | `skip`, `link`, `domain`, `speak` |
+| `codeMode` | `label` | `label`, `skip`, `speak` |
+| `inlineCodeMode` | `speak` | `speak`, `label`, `skip` |
+| `tableMode` | `flatten` | `flatten`, `skip` |
+| `textReplacements` | `{}` | character or string to replacement |
+
+With `markdown: "auto"`, text is parsed as Markdown only when it contains a
+strong signal such as a heading, fence, link, table, list, or bold text.
+
+| Input | Spoken |
+|---|---|
+| `## Headline` | `Headline.` |
+| `**bold**`, `*italic*`, `~~gone~~` | `bold`, `italic`, `gone` |
+| `- item` / `1. item` | `item.` with sentence pauses |
+| `> quote` | quote text |
+| `[OpenAI](https://openai.com)` | `OpenAI` |
+| `![alt](image.png)` | `alt` |
+| `https://example.com` | `link` by default; `skip`, `domain`, or `speak` |
+| `` `inline code` `` | `inline code` |
+| fenced/indented code block | `code block` |
+| Markdown table | flattened rows |
+| raw HTML | tags stripped, text retained |
+| `—` / `→` / `×` | `,` / `right arrow` / `times` |
+
+```powershell
+winTTSas sanitize                  # show modes
+winTTSas sanitize on|off
+winTTSas sanitize --test "## Hi`nA — B → C"
+winTTSas markdown auto|on|off
+winTTSas sample --raw "## Keep Markdown"
+```
+
+`--test` prints the final spoken text without synthesizing. `textReplacements`
+overrides the built-in symbol table; an empty value removes the character.
+The API can override the global setting per request with `"sanitize": false`,
+and URL forms accept `sanitize/off`.
+
+The sanitized text is what enters the synthesis cache, so changing the
+replacement table or Markdown policy changes the cache key.
 
 ### Autostart and uninstall
 
@@ -573,6 +627,7 @@ fields the URL did not set.
 | `speed` | | 0.25-4.0, overriding the CLI default |
 | `gain_db` | `gain`, `gaindb`, `volume` | -24 to +24 dB, overriding the CLI default |
 | `response_format` | `format` | `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm`, plus aliases |
+| `sanitize` | | `on`/`off`, overriding the config default |
 | `model` | | Accepted and ignored |
 
 Rules:
@@ -607,11 +662,13 @@ and errors are identical.
 | `response_format` | `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm` |
 | `speed` | 0.25-4.0; overrides the CLI default; CLI speed is used when omitted |
 | `gain_db` | -24 to +24 dB; overrides the CLI gain. `gainDb` also accepted |
+| `sanitize` | Boolean; overrides the config default for this request |
 | `model` | Accepted and ignored |
 | `instructions` | Accepted and ignored |
 
 Unknown voices fall back to the default voice. Missing `voice` uses the default
-voice. Text is spoken as sent; no markup or SSML is interpreted.
+voice. Text is sanitized by default (Markdown, URLs, symbols); set
+`"sanitize": false` to speak the raw text. No SSML is interpreted.
 
 Long input is split at sentence boundaries, synthesized in chunks, concatenated,
 and transcoded once. `input` over the limit returns `400`.
@@ -761,6 +818,15 @@ CLI; both are equivalent. The server hot-reloads the file on the next request.
   "mp3Bitrate": "64k",
   "voiceMap": {
     "alloy": "Microsoft Andrew"
+  },
+  "sanitize": true,
+  "markdown": "auto",
+  "urlMode": "link",
+  "codeMode": "label",
+  "inlineCodeMode": "speak",
+  "tableMode": "flatten",
+  "textReplacements": {
+    "™": " trademark "
   }
 }
 ```
@@ -784,6 +850,13 @@ CLI; both are equivalent. The server hot-reloads the file on the next request.
 | `ffmpegPath` | `"ffmpeg"` | Bare name prefers the bundled copy, then `PATH` |
 | `mp3Bitrate` | `"64k"` | MP3/AAC bitrate |
 | `voiceMap` | `{}` | Alias -> SAPI voice name |
+| `sanitize` | `true` | Markdown and symbol sanitization |
+| `markdown` | `auto` | `auto`, `on`, `off` |
+| `urlMode` | `link` | `skip`, `link`, `domain`, `speak` |
+| `codeMode` | `label` | `label`, `skip`, `speak` |
+| `inlineCodeMode` | `speak` | `speak`, `label`, `skip` |
+| `tableMode` | `flatten` | `flatten`, `skip` |
+| `textReplacements` | `{}` | Symbol/string replacement map |
 
 ### Paths and portability
 
@@ -854,6 +927,9 @@ Result: about 460 MB on disk, about 194 MB zipped.
 - Long input is split at sentence boundaries, synthesized as WAV, concatenated,
   then transcoded once with ffmpeg. Gain is applied during that encode with a
   true-peak limiter.
+- Markdown and symbol sanitization runs before normalization and chunking. The
+  sanitized text is what enters the cache, so changing the policy changes the
+  cache key.
 - Config changes are hot-reloaded from disk on the next request. The CLI also
   pokes the running server over the control pipe and reports the server's
   effective setting.
@@ -926,6 +1002,8 @@ docs/reference.md
   links.
 - NaturalVoiceSAPIAdapter is MIT, © 2024 gexgd0419. Its license is in
   `docs\NaturalVoiceSAPIAdapter-LICENSE.txt`.
+- Markdig is BSD-2-Clause, © 2016-2026 Alexandre Mutel. Its license is in
+  `docs\Markdig-LICENSE.txt`.
 - The .NET 8 runtime is MIT, © .NET Foundation and Contributors.
   `licenses\` holds Microsoft's `LICENSE.TXT` and third-party notices.
 - winTTSas itself is MIT, © 2026 Magid William; see [LICENSE](../LICENSE).

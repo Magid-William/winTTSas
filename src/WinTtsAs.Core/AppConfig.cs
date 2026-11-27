@@ -22,6 +22,14 @@ public sealed class AppConfig
     public string Mp3Bitrate { get; set; } = "64k";
     public Dictionary<string, string> VoiceMap { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public bool Sanitize { get; set; } = true;
+    public string Markdown { get; set; } = "auto";
+    public string UrlMode { get; set; } = "link";
+    public string CodeMode { get; set; } = "label";
+    public string InlineCodeMode { get; set; } = "speak";
+    public string TableMode { get; set; } = "flatten";
+    public Dictionary<string, string> TextReplacements { get; set; } = new(StringComparer.Ordinal);
+
     public void Normalize()
     {
         if (Port is < 1024 or > 65535)
@@ -54,6 +62,26 @@ public sealed class AppConfig
         Mp3Bitrate = string.IsNullOrWhiteSpace(Mp3Bitrate) ? "64k" : Mp3Bitrate.Trim();
         DefaultVoice = DefaultVoice?.Trim() ?? "";
 
+        Markdown = NormalizeChoice(Markdown, "auto", "auto", "on", "off");
+        UrlMode = NormalizeChoice(UrlMode, "link", "skip", "link", "domain", "speak");
+        CodeMode = NormalizeChoice(CodeMode, "label", "label", "skip", "speak");
+        InlineCodeMode = NormalizeChoice(InlineCodeMode, "speak", "speak", "label", "skip");
+        TableMode = NormalizeChoice(TableMode, "flatten", "flatten", "skip");
+
+        var replacements = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (TextReplacements is not null)
+        {
+            foreach (var pair in TextReplacements)
+            {
+                if (!string.IsNullOrEmpty(pair.Key))
+                {
+                    replacements[pair.Key] = pair.Value ?? "";
+                }
+            }
+        }
+
+        TextReplacements = replacements;
+
         var normalizedMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (VoiceMap is not null)
         {
@@ -67,6 +95,15 @@ public sealed class AppConfig
         }
 
         VoiceMap = normalizedMap;
+    }
+
+    private static string NormalizeChoice(
+        string? value,
+        string fallback,
+        params string[] allowed)
+    {
+        var normalized = (value ?? "").Trim().ToLowerInvariant();
+        return allowed.Contains(normalized, StringComparer.Ordinal) ? normalized : fallback;
     }
 }
 

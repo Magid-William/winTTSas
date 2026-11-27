@@ -10,6 +10,7 @@ internal sealed class SpeechUrlValues
     public string? Format { get; set; }
     public double? Speed { get; set; }
     public double? GainDb { get; set; }
+    public bool? Sanitize { get; set; }
 }
 
 internal sealed record SpeechUrlError(
@@ -20,7 +21,7 @@ internal sealed record SpeechUrlError(
 internal static class SpeechUrl
 {
     public const string AcceptedKeys =
-        "voice, speed, gain_db (gain, gaindb, volume), response_format (format), input (text), model";
+        "voice, speed, gain_db (gain, gaindb, volume), response_format (format), input (text), sanitize, model";
 
     private enum Field
     {
@@ -29,6 +30,7 @@ internal static class SpeechUrl
         Gain,
         Format,
         Input,
+        Sanitize,
         Model
     }
 
@@ -148,6 +150,7 @@ internal static class SpeechUrl
         Field.Format => values.Format is null,
         Field.Speed => values.Speed is null,
         Field.Gain => values.GainDb is null,
+        Field.Sanitize => values.Sanitize is null,
         _ => false
     };
 
@@ -209,6 +212,18 @@ internal static class SpeechUrl
                 values.Input = value;
                 return true;
 
+            case Field.Sanitize:
+                if (!TryParseBool(value, out var sanitize))
+                {
+                    error = new SpeechUrlError(
+                        "sanitize must be true or false.",
+                        "sanitize");
+                    return false;
+                }
+
+                values.Sanitize = sanitize;
+                return true;
+
             case Field.Speed:
                 if (!TryParseNumber(value, out var speed))
                 {
@@ -258,6 +273,9 @@ internal static class SpeechUrl
             case "input" or "text":
                 field = Field.Input;
                 return true;
+            case "sanitize":
+                field = Field.Sanitize;
+                return true;
             case "model":
                 field = Field.Model;
                 return true;
@@ -270,6 +288,22 @@ internal static class SpeechUrl
     private static bool TryParseNumber(string value, out double number) =>
         double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out number) &&
         double.IsFinite(number);
+
+    private static bool TryParseBool(string value, out bool result)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "true" or "on" or "1" or "yes":
+                result = true;
+                return true;
+            case "false" or "off" or "0" or "no":
+                result = false;
+                return true;
+            default:
+                result = false;
+                return false;
+        }
+    }
 
     // The host decodes the path except for %2F, so unescape only that, and only
     // after the remainder has been split on '/'; otherwise an encoded slash would

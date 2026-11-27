@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Markdig" Version="1.6.0" />
     <PackageReference Include="System.Speech" Version="8.0.0" />
   </ItemGroup>
 

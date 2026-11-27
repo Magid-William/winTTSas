@@ -16,6 +16,7 @@ client -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
 - [Introduction](#introduction)
 - [Getting started](#getting-started)
   - [CLI defaults vs API overrides](#cli-defaults-vs-api-overrides)
+- [Sanitization](#sanitization)
 - [URL routes](#url-routes)
 - [Flags](#flags)
   - [Server and CLI](#server-and-cli)
@@ -124,6 +125,62 @@ curl.exe -s http://127.0.0.1:5178/v1/audio/speech `
 `X-WinTTSas-Speed`, `X-WinTTSas-Rate`, and `X-WinTTSas-Gain-Db` show what a
 request actually used.
 
+## Sanitization
+
+Markdown and LLM-style text is converted to speech-friendly plain text before
+synthesis. It is on by default for both the API and `sample`.
+
+| Input | Spoken |
+|---|---|
+| `## Headline` | `Headline.` |
+| `**bold**`, `*italic*` | `bold`, `italic` |
+| `- item` | `item.` |
+| `[OpenAI](https://openai.com)` | `OpenAI` |
+| `https://example.com` | `link` by default |
+| `` `code` `` | `code` |
+| fenced code block | `code block` |
+| Markdown table | flattened rows |
+| `—` | `,` |
+| `→` | `right arrow` |
+| `×` | `times` |
+
+Settings live in `config.json`:
+
+```json
+{
+  "sanitize": true,
+  "markdown": "auto",
+  "urlMode": "link",
+  "codeMode": "label",
+  "inlineCodeMode": "speak",
+  "tableMode": "flatten",
+  "textReplacements": {
+    "™": " trademark "
+  }
+}
+```
+
+| Setting | Default | Values |
+|---|---|---|
+| `sanitize` | `true` | on/off |
+| `markdown` | `auto` | `auto`, `on`, `off` |
+| `urlMode` | `link` | `skip`, `link`, `domain`, `speak` |
+| `codeMode` | `label` | `label`, `skip`, `speak` |
+| `inlineCodeMode` | `speak` | `speak`, `label`, `skip` |
+| `tableMode` | `flatten` | `flatten`, `skip` |
+
+```powershell
+winTTSas sanitize                  # show modes
+winTTSas sanitize on
+winTTSas sanitize --test "## Hi`nA — B → C"
+winTTSas markdown auto             # auto, on, or off
+winTTSas sample --raw "## Keep symbols and Markdown"
+```
+
+API requests can override the global setting with `"sanitize": false`; URL forms
+accept `sanitize/off`. `textReplacements` overrides the built-in symbol table,
+and an empty replacement removes the character.
+
 ## URL routes
 
 Every synthesis form is available with and without `/v1`, nested under the
@@ -156,8 +213,8 @@ Utility routes:
 | `GET` | `/` | Browser test page |
 
 Path keys: `voice`, `speed`, `gain_db` (`gain`, `volume`), `response_format`
-(`format`), `input` (`text`), and `model`. Pairs can be in any order, a trailing
-slash is ignored, and `%2F` means a literal `/` in text.
+(`format`), `input` (`text`), `sanitize`, and `model`. Pairs can be in any order,
+a trailing slash is ignored, and `%2F` means a literal `/` in text.
 
 ```powershell
 # JSON body
@@ -219,6 +276,7 @@ also accept `--flag=value`.
 | `--voice <index\|name\|slug>` | Strict voice selection |
 | `--save <path>` | Write audio to a file instead of playing (alias `-o`) |
 | `--format <format>` | Output format for `--save`; inferred from the extension |
+| `--raw` | Skip markdown and symbol sanitization |
 | `--device <n>` | Output device index |
 | `--devices` | List audio outputs and exit |
 | `--help` | Show sample usage |
@@ -245,6 +303,9 @@ winTTSas sample --voice andrew --speed 1.2 --volume +3 --save hello.flac
 
 # Force a format regardless of the extension
 winTTSas sample "Hello" --save output.bin --format mp3
+
+# Bypass markdown and symbol sanitization
+winTTSas sample --raw "## Literal — text"
 ```
 
 ## Licenses
@@ -260,6 +321,8 @@ winTTSas sample "Hello" --save output.bin --format mp3
 - **NaturalVoiceSAPIAdapter.** MIT, © 2024 gexgd0419. Its license is in
   `docs\NaturalVoiceSAPIAdapter-LICENSE.txt`; keep it with the adapter when
   redistributing.
+- **Markdig.** BSD-2-Clause, © 2016-2026 Alexandre Mutel. Its license is in
+  `docs\Markdig-LICENSE.txt`.
 - **.NET 8 runtime.** MIT, © .NET Foundation and Contributors. Self-contained
   builds embed it; `licenses\` contains Microsoft's `LICENSE.TXT` and
   third-party notices.

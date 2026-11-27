@@ -524,7 +524,8 @@ public static class ServerHost
         Voice = values.Voice,
         ResponseFormat = values.Format,
         Speed = values.Speed,
-        GainDb = values.GainDb
+        GainDb = values.GainDb,
+        Sanitize = values.Sanitize
     };
 
     private static Task WriteSpeechUrlErrorAsync(HttpContext context, SpeechUrlError error) =>
@@ -610,6 +611,7 @@ public static class ServerHost
                 request.ResponseFormat,
                 request.Speed,
                 requestGain,
+                request.Sanitize,
                 cancellationToken);
 
             context.Response.ContentType = result.ContentType;
@@ -794,6 +796,9 @@ public static class ServerHost
 
         [JsonPropertyName("gainDb")]
         public double? GainDbCamel { get; set; }
+
+        [JsonPropertyName("sanitize")]
+        public bool? Sanitize { get; set; }
 
         [JsonPropertyName("instructions")]
         public string? Instructions { get; set; }

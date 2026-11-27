@@ -96,6 +96,7 @@ public sealed class SpeechService : IAsyncDisposable
         string? formatRequest,
         double? speedRequest,
         double? gainDbRequest,
+        bool? sanitizeRequest,
         CancellationToken cancellationToken)
     {
         ReloadIfConfigChanged();
@@ -103,7 +104,8 @@ public sealed class SpeechService : IAsyncDisposable
         var config = _config;
         var catalog = _catalog;
 
-        var normalized = TextNormalizer.Normalize(text);
+        var sanitized = TextSanitizer.Apply(text, config, sanitizeRequest);
+        var normalized = TextNormalizer.Normalize(sanitized);
         if (normalized.Length == 0)
         {
             throw new ArgumentException("input is empty", nameof(text));
@@ -196,6 +198,8 @@ public sealed class SpeechService : IAsyncDisposable
             Version = BuildInfo.Version,
             Ffmpeg = FfmpegVersion,
             FfmpegPath = _ffmpeg.ResolvedPath,
+            Sanitize = config.Sanitize,
+            Markdown = config.Markdown,
             Adapter = adapter.Detail,
             LogDir = AppPaths.LogDir,
             ConfigFile = AppPaths.ConfigFile

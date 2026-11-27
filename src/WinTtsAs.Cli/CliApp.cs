@@ -54,6 +54,8 @@ public static class CliApp
                 "speed" => await SpeedAsync(rest, cancellationToken),
                 "port" => await PortAsync(rest, cancellationToken),
                 "format" => await FormatAsync(rest, cancellationToken),
+                "sanitize" => await SanitizeAsync(rest, cancellationToken),
+                "markdown" => await MarkdownAsync(rest, cancellationToken),
                 "logon" => await LogonAsync(rest, cancellationToken),
                 "uninstall" => await UninstallAsync(rest, cancellationToken),
                 _ => Unknown(command)
@@ -83,6 +85,8 @@ Usage:
   winTTSas speed [0.25-4.0]
   winTTSas port [port]
   winTTSas format [mp3|wav|opus|aac|flac|pcm]
+  winTTSas sanitize [on|off|--test <text>]
+  winTTSas markdown [auto|on|off]
   winTTSas logon on|off
   winTTSas uninstall [--yes] [--keep-data] [--remove-adapter]
   winTTSas help
@@ -229,6 +233,7 @@ Notes:
         string? voiceQuery = null;
         string? savePath = null;
         string? formatOverride = null;
+        var raw = false;
         var parseOptions = true;
 
         for (var i = 0; i < args.Length; i++)
@@ -257,6 +262,12 @@ Notes:
             if (arg.Equals("--devices", StringComparison.OrdinalIgnoreCase))
             {
                 return PrintAudioDevices();
+            }
+
+            if (arg.Equals("--raw", StringComparison.OrdinalIgnoreCase))
+            {
+                raw = true;
+                continue;
             }
 
             if (TryReadOption(args, ref i, "--device", out var deviceValue))
@@ -455,6 +466,21 @@ Notes:
             return 1;
         }
 
+        var spoken = raw ? text : TextSanitizer.Apply(text, config);
+        if (spoken.Length == 0)
+        {
+            Console.Error.WriteLine(
+                "error: sanitized text is empty; use --raw or adjust sanitization.");
+            return 1;
+        }
+
+        if (spoken.Length > config.MaxTextLength)
+        {
+            Console.Error.WriteLine(
+                $"sanitized sample text must be {config.MaxTextLength} characters or fewer.");
+            return 1;
+        }
+
         var speed = speedOverride ?? config.DefaultSpeed;
         var gainDb = gainOverride ?? config.GainDb;
         var level = levelOverride ?? config.Volume;
@@ -464,13 +490,18 @@ Notes:
         Console.WriteLine($"speed:  {speed:0.00} (SAPI rate {rate})");
         Console.WriteLine($"gain:   {FormatGain(gainDb)} dB");
         Console.WriteLine($"level:  {level}");
-        Console.WriteLine($"text:   {text}");
+        if (!string.Equals(text, spoken, StringComparison.Ordinal))
+        {
+            Console.WriteLine($"input:  {text}");
+        }
+
+        Console.WriteLine($"text:   {spoken}");
         Console.WriteLine();
         Console.WriteLine(outputPath is null ? "speaking..." : "saving...");
 
         var wav = SpeechSampler.SynthesizeWav(
             voice.Name,
-            text,
+            spoken,
             rate,
             level);
 
@@ -636,6 +667,7 @@ Options:
   --voice <index|name|slug>  Select a voice
   --save <path>            Write audio to a file instead of playing (alias: -o)
   --format <format>        Output format for --save; inferred from the extension
+  --raw                    Skip markdown and symbol sanitization
   --device <index>         Play on a specific output device
   --devices                List audio output devices
   --help                   Show this help
@@ -889,6 +921,87 @@ Options:
         return 0;
     }
 
+    private static async Task<int> SanitizeAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        var config = ConfigStore.Load();
+
+        if (args.Length == 0)
+        {
+            PrintSanitize(config);
+            return 0;
+        }
+
+        var first = args[0];
+        if (first.Equals("--test", StringComparison.OrdinalIgnoreCase) ||
+            first.StartsWith("--test=", StringComparison.OrdinalIgnoreCase))
+        {
+            var text = first.StartsWith("--test=", StringComparison.OrdinalIgnoreCase)
+                ? first["--test=".Length..]
+                : string.Join(" ", args.Skip(1));
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                Console.Error.WriteLine("usage: winTTSas sanitize --test <text>");
+                return 1;
+            }
+
+            Console.WriteLine(TextSanitizer.Apply(text, config));
+            return 0;
+        }
+
+        var mode = first.ToLowerInvariant();
+        if (mode is "on" or "off")
+        {
+            config.Sanitize = mode == "on";
+            ConfigStore.Save(config);
+            await ReloadAsync(cancellationToken);
+            Console.WriteLine($"Sanitization {mode}.");
+            return 0;
+        }
+
+        Console.Error.WriteLine("usage: winTTSas sanitize [on|off|--test <text>]");
+        return 1;
+    }
+
+    private static void PrintSanitize(AppConfig config)
+    {
+        Console.WriteLine($"sanitize: {(config.Sanitize ? "on" : "off")}");
+        Console.WriteLine($"markdown: {config.Markdown}");
+        Console.WriteLine($"url:      {config.UrlMode}");
+        Console.WriteLine($"code:     {config.CodeMode}");
+        Console.WriteLine($"inline:   {config.InlineCodeMode}");
+        Console.WriteLine($"tables:   {config.TableMode}");
+        Console.WriteLine($"replaced: {config.TextReplacements.Count} custom");
+    }
+
+    private static async Task<int> MarkdownAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        var config = ConfigStore.Load();
+
+        if (args.Length == 0)
+        {
+            Console.WriteLine(config.Markdown);
+            return 0;
+        }
+
+        var mode = args[0].Trim().ToLowerInvariant();
+        if (mode is not ("auto" or "on" or "off"))
+        {
+            Console.Error.WriteLine("markdown must be auto, on, or off.");
+            return 1;
+        }
+
+        config.Markdown = mode;
+        ConfigStore.Save(config);
+        await ReloadAsync(cancellationToken);
+        Console.WriteLine($"Markdown detection set to {mode}.");
+        return 0;
+    }
+
     private static async Task<int> PortAsync(
         string[] args,
         CancellationToken cancellationToken)
@@ -1105,6 +1218,7 @@ Options:
         {
             Console.WriteLine($"binary:   {status.FfmpegPath}");
         }
+        Console.WriteLine($"sanitize: {(status.Sanitize ? "on" : "off")} (markdown {status.Markdown})");
         Console.WriteLine($"logs:     {status.LogDir}");
     }
 
@@ -1125,6 +1239,7 @@ Options:
         Console.WriteLine($"voices:   {catalog.Voices.Count} installed ({catalog.NaturalCount} natural)");
         Console.WriteLine($"logon:    {(IsLogonEnabled() ? "on" : "off")}");
         Console.WriteLine($"adapter:  {adapter.Detail}");
+        Console.WriteLine($"sanitize: {(config.Sanitize ? "on" : "off")} (markdown {config.Markdown})");
         Console.WriteLine($"config:   {AppPaths.ConfigFile}");
         Console.WriteLine($"logs:     {AppPaths.LogDir}");
     }

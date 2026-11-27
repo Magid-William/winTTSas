@@ -37,6 +37,8 @@ public sealed record StatusInfo
     public string Version { get; init; } = "";
     public string Ffmpeg { get; init; } = "";
     public string FfmpegPath { get; init; } = "";
+    public bool Sanitize { get; init; } = true;
+    public string Markdown { get; init; } = "auto";
     public string Adapter { get; init; } = "";
     public string LogDir { get; init; } = "";
     public string ConfigFile { get; init; } = "";
