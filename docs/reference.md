@@ -968,7 +968,7 @@ Result: about 460 MB on disk, about 194 MB zipped.
 
 - No true streaming: audio is returned after synthesis.
 - No SSML or pitch controls in v1.
-- No text cleaning by default; input is spoken as sent.
+- Text sanitization is on by default; use `sanitize off` or `--raw` to speak raw text.
 - URL-only requests are limited to short text by the HTTP request-line limit;
   send long input to the JSON endpoint.
 - Gain is a default; the nonstandard `gain_db` request field can override it.

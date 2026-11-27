@@ -23,6 +23,7 @@ public static class TestPage
     audio { width: 100%; margin-top: 1rem; }
     .check { display: flex; align-items: center; gap: .5rem; font-weight: 600; }
     .check input { width: auto; margin: 0; }
+    .hint { color: #888; margin: .25rem 0 0; font-size: .9rem; }
   </style>
 </head>
 <body>
@@ -59,8 +60,9 @@ public static class TestPage
 
   <label class="check" for="sanitize">
     <input id="sanitize" type="checkbox" checked>
-    Sanitize Markdown, URLs, and symbols
+    Sanitize
   </label>
+  <p class="hint">Strip Markdown, URLs, and symbols before speaking.</p>
 
   <div>
     <button id="speak">Synthesize</button>

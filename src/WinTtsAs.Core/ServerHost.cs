@@ -238,7 +238,11 @@ public static class ServerHost
         SpeechService speech,
         ILogger logger)
     {
-        app.MapGet("/", () => Results.Content(TestPage.Html, "text/html; charset=utf-8"));
+        app.MapGet("/", (HttpContext context) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Content(TestPage.Html, "text/html; charset=utf-8");
+        });
 
         app.MapGet("/health", () => Results.Json(new
         {
