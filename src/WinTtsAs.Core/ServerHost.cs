@@ -54,6 +54,9 @@ public static class ServerHost
 
         WebApplication? app = null;
         SpeechService? speech = null;
+        SpeechPlayer? player = null;
+        SpeechActions? actions = null;
+        HotkeyManager? hotkeys = null;
         ControlPipeServer? pipe = null;
 
         try
@@ -120,9 +123,21 @@ public static class ServerHost
                 return 4;
             }
 
+            player = new SpeechPlayer(app.Services.GetRequiredService<ILogger<SpeechPlayer>>());
+            actions = new SpeechActions(
+                speech,
+                player,
+                app.Services.GetRequiredService<ILogger<SpeechActions>>());
+            hotkeys = new HotkeyManager(
+                actions.HandleAsync,
+                app.Services.GetRequiredService<ILogger<HotkeyManager>>());
+
+            speech.ConfigReloaded += reloaded => _ = ReapplyHotkeysAsync(hotkeys, reloaded, logger);
+            await hotkeys.ApplyAsync(config);
+
             pipe = new ControlPipeServer(
                 ControlPipeNames.ForCurrentUser(),
-                request => HandleControlAsync(request, speech),
+                request => HandleControlAsync(request, speech, hotkeys, actions),
                 app.Lifetime,
                 app.Services.GetRequiredService<ILogger<ControlPipeServer>>());
 
@@ -217,6 +232,21 @@ public static class ServerHost
             if (pipe is not null)
             {
                 await pipe.DisposeAsync();
+            }
+
+            if (hotkeys is not null)
+            {
+                await hotkeys.DisposeAsync();
+            }
+
+            if (actions is not null)
+            {
+                actions.Dispose();
+            }
+
+            if (player is not null)
+            {
+                player.Dispose();
             }
 
             if (speech is not null)
@@ -341,52 +371,84 @@ public static class ServerHost
             HandleSpeechSegmentsAsync(context, speech, logger));
     }
 
-    private static Task<ControlResponse> HandleControlAsync(
+    private static async Task<ControlResponse> HandleControlAsync(
         ControlRequest request,
-        SpeechService speech)
+        SpeechService speech,
+        HotkeyManager hotkeys,
+        SpeechActions actions)
     {
         switch ((request.Cmd ?? "").Trim().ToLowerInvariant())
         {
             case "status":
-                return Task.FromResult(new ControlResponse
+                return new ControlResponse
                 {
                     Ok = true,
-                    Status = speech.GetStatus()
-                });
+                    Status = BuildStatus(speech, hotkeys, actions)
+                };
 
             case "reload":
                 try
                 {
-                    speech.Reload(ConfigStore.Load());
-                    return Task.FromResult(new ControlResponse
+                    var config = ConfigStore.Load();
+                    speech.Reload(config);
+                    await hotkeys.ApplyAsync(config, force: true);
+
+                    return new ControlResponse
                     {
                         Ok = true,
-                        Status = speech.GetStatus()
-                    });
+                        Status = BuildStatus(speech, hotkeys, actions)
+                    };
                 }
                 catch (Exception ex)
                 {
-                    return Task.FromResult(new ControlResponse
+                    return new ControlResponse
                     {
                         Ok = false,
                         Error = ex.Message
-                    });
+                    };
                 }
 
             case "stop":
-                return Task.FromResult(new ControlResponse
+                return new ControlResponse
                 {
                     Ok = true,
                     Stop = true,
-                    Status = speech.GetStatus()
-                });
+                    Status = BuildStatus(speech, hotkeys, actions)
+                };
 
             default:
-                return Task.FromResult(new ControlResponse
+                return new ControlResponse
                 {
                     Ok = false,
                     Error = $"unknown command: {request.Cmd}"
-                });
+                };
+        }
+    }
+
+    private static StatusInfo BuildStatus(
+        SpeechService speech,
+        HotkeyManager hotkeys,
+        SpeechActions actions) =>
+        speech.GetStatus() with
+        {
+            SelectedTextHotkey = speech.Config.Hotkeys.SelectedText.ActiveChord ?? "",
+            ClipboardHotkey = speech.Config.Hotkeys.Clipboard.ActiveChord ?? "",
+            HotkeyError = hotkeys.Error ?? "",
+            Speaking = actions.IsSpeaking
+        };
+
+    private static async Task ReapplyHotkeysAsync(
+        HotkeyManager hotkeys,
+        AppConfig config,
+        ILogger logger)
+    {
+        try
+        {
+            await hotkeys.ApplyAsync(config);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "could not re-apply the global hotkeys");
         }
     }
 

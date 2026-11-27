@@ -31,7 +31,10 @@ public static class WaveOutPlayer
         return devices;
     }
 
-    public static void Play(byte[] wav, int? deviceIndex = null)
+    public static void Play(
+        byte[] wav,
+        int? deviceIndex = null,
+        CancellationToken cancellationToken = default)
     {
         var (format, data) = ParseWav(wav);
         if (format.wFormatTag != 1)
@@ -39,6 +42,12 @@ public static class WaveOutPlayer
             throw new InvalidOperationException(
                 "Only PCM WAV playback is supported by the sampler.");
         }
+
+        // Long selections can be minutes of audio; scale the guard with the clip.
+        var durationMs = format.nAvgBytesPerSec == 0
+            ? 0
+            : (long)Math.Ceiling(data.Length * 1000.0 / format.nAvgBytesPerSec);
+        var timeoutMs = Math.Max(PlaybackTimeoutMs, (durationMs * 2) + 30_000);
 
         var device = deviceIndex is null
             ? new UIntPtr(nuint.MaxValue)
@@ -88,9 +97,17 @@ public static class WaveOutPlayer
                 throw new InvalidOperationException($"waveOutWrite failed ({result}).");
             }
 
-            var deadline = Environment.TickCount64 + PlaybackTimeoutMs;
+            var deadline = Environment.TickCount64 + timeoutMs;
+            var cancelled = false;
             while (true)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    waveOutReset(handle);
+                    cancelled = true;
+                    break;
+                }
+
                 var header = Marshal.PtrToStructure<WaveHdr>(headerPointer);
                 if ((header.dwFlags & WhdrDone) != 0)
                 {
@@ -107,6 +124,11 @@ public static class WaveOutPlayer
             }
 
             waveOutUnprepareHeader(handle, headerPointer, headerSize);
+
+            if (cancelled)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
         }
         finally
         {

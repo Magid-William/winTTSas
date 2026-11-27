@@ -16,6 +16,7 @@ client -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
 - [Introduction](#introduction)
 - [Getting started](#getting-started)
   - [CLI defaults vs API overrides](#cli-defaults-vs-api-overrides)
+- [Global hotkeys](#global-hotkeys)
 - [Sanitization](#sanitization)
 - [URL routes](#url-routes)
 - [Flags](#flags)
@@ -124,6 +125,42 @@ curl.exe -s http://127.0.0.1:5178/v1/audio/speech `
 `winTTSas status` shows the current defaults. Response headers
 `X-WinTTSas-Speed`, `X-WinTTSas-Rate`, and `X-WinTTSas-Gain-Db` show what a
 request actually used.
+
+## Global hotkeys
+
+The server registers two global shortcuts while it runs:
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+Alt+R` | Read the selected text aloud |
+| `Ctrl+Alt+C` | Read the clipboard aloud |
+
+Pressing either shortcut while something is speaking stops it, and pressing it
+again reads. Selected text is copied with `Ctrl+C`, then the previous plain-text
+clipboard is put back, so reading a selection does not cost you the clipboard.
+
+```powershell
+winTTSas selectedText                      # shortcut and whether it is active
+winTTSas selectedText on
+winTTSas selectedText off
+winTTSas selectedText change               # press the new chord; Esc cancels
+winTTSas selectedText change Ctrl+Shift+R  # or pass it directly
+winTTSas clipboard ...                     # same four forms
+```
+
+The hotkeys live in the server, so `winTTSas start` (or `logon on`) must be
+running for them to work. `winTTSas status` shows both shortcuts and whether
+they registered; if another app already owns one, the replacement is reported
+instead of failing silently.
+
+Limits worth knowing:
+
+- Keyboard input and the clipboard are blocked towards elevated windows. The
+  hotkey then reads nothing and logs it.
+- In a console with no selection, the injected `Ctrl+C` can interrupt the
+  running command; select the text first.
+- The clipboard restore covers plain text. Images or rich formats copied by the
+  selection are gone afterwards.
 
 ## Sanitization
 

@@ -8,7 +8,7 @@ app -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
      -> NaturalVoiceSAPIAdapter -> Narrator natural voices
 ```
 
-Working v0.3.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
+Working v0.4.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 
 ## Table of contents
 
@@ -23,6 +23,7 @@ Working v0.3.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
   - [Lifecycle](#lifecycle)
   - [Voices](#voices)
   - [Defaults](#defaults)
+  - [Global hotkeys](#global-hotkeys)
   - [Sample playback](#sample-playback)
   - [Sanitization](#sanitization)
   - [Autostart and uninstall](#autostart-and-uninstall)
@@ -133,7 +134,7 @@ cd C:\Tools\winTTSas
 the effective settings:
 
 ```
-winTTSas 0.3.0
+winTTSas 0.4.0
 state:    running (pid 14816)
 base URL: http://127.0.0.1:5178/v1
 voice:    Microsoft Andrew
@@ -255,7 +256,7 @@ running server, so no restart is needed except for `port`.
 | `winTTSas start --foreground` | Run the server in this console |
 | `winTTSas start --quiet` | Start if needed, print only the base URL |
 | `winTTSas stop` | Graceful shutdown, with a force-kill fallback |
-| `winTTSas status` | State, PID, URL, voice, format, speed, queue, logon |
+| `winTTSas status` | State, PID, URL, voice, format, speed, hotkeys, queue, logon |
 | `winTTSas status --json` | Same data as JSON |
 
 Examples:
@@ -320,6 +321,48 @@ request can override it with `gain_db`. Gain is applied during transcoding with
 a lookahead limiter (`volume=<dB>,alimiter=limit=0.84`); the cached raw WAV is
 left untouched, so changing gain never invalidates the cache. Non-zero gain
 makes even WAV output go through ffmpeg.
+
+### Global hotkeys
+
+The server registers two global shortcuts while it runs. They read aloud from
+any application:
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+Alt+R` | Read the selected text |
+| `Ctrl+Alt+C` | Read the clipboard |
+
+| Command | Effect |
+|---|---|
+| `winTTSas selectedText` | Show the chord and whether it is active |
+| `winTTSas selectedText on` | Re-enable the configured chord |
+| `winTTSas selectedText off` | Unregister it, keep the chord |
+| `winTTSas selectedText change` | Wait for the next chord you press; `Esc` cancels |
+| `winTTSas selectedText change Ctrl+Shift+R` | Set the chord directly |
+| `winTTSas clipboard ...` | Same four forms for the clipboard |
+
+```powershell
+winTTSas selectedText
+winTTSas selectedText off
+winTTSas selectedText change Ctrl+Shift+R
+winTTSas clipboard change        # then press the new chord
+winTTSas status                  # shows both chords, errors, and speech state
+```
+
+Reads use the same synthesis path and defaults as the API (voice, speed, volume,
+sanitization), so `select`, `speed`, and `volume` apply. Audio plays on the
+default output device.
+
+Pressing a shortcut while speech is playing stops it; pressing it again reads.
+
+The selection is copied with an injected `Ctrl+C` after the shortcut's modifiers
+are released, and the previous plain-text clipboard is restored afterwards.
+Empty text produces a short beep and a log entry instead of speech.
+
+Registration failures are reported instead of being silent: a chord that
+Windows or another application already owns shows up in `change`, `on`, and
+`status`. An invalid chord is kept verbatim in `config.json` so the error can be
+read back. The hotkeys need the running server, so use `start` or `logon on`.
 
 ### Sample playback
 
@@ -827,6 +870,10 @@ CLI; both are equivalent. The server hot-reloads the file on the next request.
   "tableMode": "flatten",
   "textReplacements": {
     "™": " trademark "
+  },
+  "hotkeys": {
+    "selectedText": { "enabled": true, "shortcut": "Ctrl+Alt+R" },
+    "clipboard": { "enabled": true, "shortcut": "Ctrl+Alt+C" }
   }
 }
 ```
@@ -857,6 +904,8 @@ CLI; both are equivalent. The server hot-reloads the file on the next request.
 | `inlineCodeMode` | `speak` | `speak`, `label`, `skip` |
 | `tableMode` | `flatten` | `flatten`, `skip` |
 | `textReplacements` | `{}` | Symbol/string replacement map |
+| `hotkeys.selectedText` | `Ctrl+Alt+R` | `enabled` and `shortcut` for reading the selection |
+| `hotkeys.clipboard` | `Ctrl+Alt+C` | `enabled` and `shortcut` for reading the clipboard |
 
 ### Paths and portability
 
@@ -937,6 +986,11 @@ Result: about 460 MB on disk, about 194 MB zipped.
   `%LOCALAPPDATA%\winTTSas\cache`; logs and cache never contain plaintext text.
 - CLI and server communicate over a per-user named pipe with
   `PipeOptions.CurrentUserOnly`.
+- Global hotkeys use `RegisterHotKey` on a dedicated message-loop thread in the
+  server, with auto-repeat suppressed. Each press is handled on a worker that
+  reads the text, synthesizes WAV through the same pipeline, and plays it on a
+  cancellable background thread. Selection reading injects `Ctrl+C` after the
+  shortcut modifiers are released and restores the plain-text clipboard.
 - The CLI and server are self-contained; ffmpeg is resolved from the bundled
   `tools\ffmpeg\ffmpeg.exe` first, then `PATH`.
 
@@ -963,6 +1017,13 @@ Result: about 460 MB on disk, about 194 MB zipped.
   logs from `winTTSas status`.
 - **Client fails on `/v1/models`**: some clients call it before synthesis. Make
   sure the base URL includes `/v1` and, if a token is set, that it is sent.
+- **A hotkey does nothing**: run `winTTSas selectedText` (or `clipboard`).
+  `(off)` means it is disabled; `server not running` means `winTTSas start` is
+  needed. A warning names a chord that another app already registered; pick a
+  different one with `winTTSas selectedText change`.
+- **A hotkey beeps instead of speaking**: nothing was selected, the clipboard
+  has no text, or the focused window is elevated (Windows blocks injected
+  input). The server log names the reason.
 
 ## Limitations
 
@@ -978,6 +1039,10 @@ Result: about 460 MB on disk, about 194 MB zipped.
 - Stored Narrator HD voices are only partially supported by the adapter.
 - The server is single-user and loopback-first; LAN use needs `bind` plus a
   token, and there is no TLS.
+- Global hotkeys need the server running and do not reach elevated windows.
+  Selection reading injects `Ctrl+C`, so a console with no selection can have
+  its running command interrupted, and only plain text is restored to the
+  clipboard.
 
 ## Layout
 

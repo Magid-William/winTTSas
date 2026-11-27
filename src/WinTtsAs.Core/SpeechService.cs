@@ -26,6 +26,9 @@ public sealed class SpeechService : IAsyncDisposable
     private VoiceCatalog _catalog;
     private string _configStamp;
 
+    /// <summary>Raised after the config is re-read from disk on the request path.</summary>
+    public event Action<AppConfig>? ConfigReloaded;
+
     public SpeechService(AppConfig config, ILogger<SpeechService> log)
     {
         _config = config;
@@ -235,6 +238,8 @@ public sealed class SpeechService : IAsyncDisposable
                     config.DefaultFormat,
                     config.DefaultSpeed,
                     config.GainDb);
+
+                ConfigReloaded?.Invoke(config);
             }
             catch (Exception ex)
             {

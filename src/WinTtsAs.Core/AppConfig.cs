@@ -1,4 +1,6 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace WinTtsAs.Core;
 
@@ -29,6 +31,7 @@ public sealed class AppConfig
     public string InlineCodeMode { get; set; } = "speak";
     public string TableMode { get; set; } = "flatten";
     public Dictionary<string, string> TextReplacements { get; set; } = new(StringComparer.Ordinal);
+    public HotkeySettings Hotkeys { get; set; } = new();
 
     public void Normalize()
     {
@@ -68,6 +71,10 @@ public sealed class AppConfig
         InlineCodeMode = NormalizeChoice(InlineCodeMode, "speak", "speak", "label", "skip");
         TableMode = NormalizeChoice(TableMode, "flatten", "flatten", "skip");
 
+        Hotkeys ??= new HotkeySettings();
+        Hotkeys.SelectedText = NormalizeHotkey(Hotkeys.SelectedText, "Ctrl+Alt+R");
+        Hotkeys.Clipboard = NormalizeHotkey(Hotkeys.Clipboard, "Ctrl+Alt+C");
+
         var replacements = new Dictionary<string, string>(StringComparer.Ordinal);
         if (TextReplacements is not null)
         {
@@ -105,6 +112,50 @@ public sealed class AppConfig
         var normalized = (value ?? "").Trim().ToLowerInvariant();
         return allowed.Contains(normalized, StringComparer.Ordinal) ? normalized : fallback;
     }
+
+    private static HotkeyBindingSettings NormalizeHotkey(
+        HotkeyBindingSettings? binding,
+        string fallback)
+    {
+        binding ??= new HotkeyBindingSettings();
+
+        var shortcut = binding.Shortcut?.Trim() ?? "";
+        if (shortcut.Length == 0)
+        {
+            shortcut = fallback;
+        }
+        else if (HotkeyChord.TryParse(shortcut, out var chord, out _))
+        {
+            shortcut = chord!.Display;
+        }
+
+        binding.Shortcut = shortcut;
+        return binding;
+    }
+}
+
+public sealed class HotkeySettings
+{
+    public HotkeyBindingSettings SelectedText { get; set; } = new()
+    {
+        Shortcut = "Ctrl+Alt+R"
+    };
+
+    public HotkeyBindingSettings Clipboard { get; set; } = new()
+    {
+        Shortcut = "Ctrl+Alt+C"
+    };
+}
+
+public sealed class HotkeyBindingSettings
+{
+    public bool Enabled { get; set; } = true;
+    public string Shortcut { get; set; } = "";
+
+    /// <summary>The normalized chord when enabled and parseable, otherwise null.</summary>
+    [JsonIgnore]
+    public string? ActiveChord =>
+        Enabled && HotkeyChord.TryParse(Shortcut, out var chord, out _) ? chord!.Display : null;
 }
 
 public static class ConfigStore
@@ -113,7 +164,8 @@ public static class ConfigStore
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
-        WriteIndented = true
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     public static AppConfig Load()

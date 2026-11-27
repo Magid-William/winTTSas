@@ -42,6 +42,10 @@ public sealed record StatusInfo
     public string Adapter { get; init; } = "";
     public string LogDir { get; init; } = "";
     public string ConfigFile { get; init; } = "";
+    public string SelectedTextHotkey { get; init; } = "";
+    public string ClipboardHotkey { get; init; } = "";
+    public string HotkeyError { get; init; } = "";
+    public bool Speaking { get; init; }
 }
 
 public static class ControlJson

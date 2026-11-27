@@ -56,6 +56,8 @@ public static class CliApp
                 "format" => await FormatAsync(rest, cancellationToken),
                 "sanitize" => await SanitizeAsync(rest, cancellationToken),
                 "markdown" => await MarkdownAsync(rest, cancellationToken),
+                "selectedtext" or "selection" => await HotkeyCommandAsync(HotkeyTarget.SelectedText, rest, cancellationToken),
+                "clipboard" => await HotkeyCommandAsync(HotkeyTarget.Clipboard, rest, cancellationToken),
                 "logon" => await LogonAsync(rest, cancellationToken),
                 "uninstall" => await UninstallAsync(rest, cancellationToken),
                 _ => Unknown(command)
@@ -87,6 +89,8 @@ Usage:
   winTTSas format [mp3|wav|opus|aac|flac|pcm]
   winTTSas sanitize [on|off|--test <text>]
   winTTSas markdown [auto|on|off]
+  winTTSas selectedText [on|off|change [shortcut]]
+  winTTSas clipboard [on|off|change [shortcut]]
   winTTSas logon on|off
   winTTSas uninstall [--yes] [--keep-data] [--remove-adapter]
   winTTSas help
@@ -101,6 +105,7 @@ Notes:
   - start runs a background server; --foreground keeps it in this console.
   - format applies live; port restarts the server.
   - logon uses HKCU Run and starts the hidden server at login.
+  - selectedText and clipboard set global read-aloud hotkeys on the server.
 """);
         return 0;
     }
@@ -1002,6 +1007,143 @@ Options:
         return 0;
     }
 
+    private enum HotkeyTarget
+    {
+        SelectedText,
+        Clipboard
+    }
+
+    private static async Task<int> HotkeyCommandAsync(
+        HotkeyTarget target,
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        var config = ConfigStore.Load();
+        var settings = HotkeySettingsFor(config, target);
+        var label = target == HotkeyTarget.SelectedText ? "selected text" : "clipboard";
+        var command = target == HotkeyTarget.SelectedText ? "selectedText" : "clipboard";
+
+        if (args.Length == 0)
+        {
+            var current = await ControlPipeClient.GetStatusAsync(500, cancellationToken);
+            PrintHotkeyState(target, config, current);
+            return 0;
+        }
+
+        var action = args[0].Trim().ToLowerInvariant();
+
+        if (action is "on" or "off")
+        {
+            settings.Enabled = action == "on";
+            ConfigStore.Save(config);
+
+            var status = await ReloadAsync(cancellationToken);
+            PrintHotkeyState(target, config, status);
+
+            if (status is null)
+            {
+                Console.WriteLine("Start the server so the shortcut works: winTTSas start");
+            }
+
+            return 0;
+        }
+
+        if (action is "change")
+        {
+            HotkeyChord? chord = null;
+
+            if (args.Length > 1)
+            {
+                var text = string.Join(" ", args.Skip(1));
+                if (!HotkeyChord.TryParse(text, out chord, out var error))
+                {
+                    Console.Error.WriteLine("error: " + error);
+                    return 1;
+                }
+            }
+            else
+            {
+                if (Console.IsInputRedirected)
+                {
+                    Console.Error.WriteLine($"usage: winTTSas {command} change <shortcut>");
+                    return 1;
+                }
+
+                Console.WriteLine($"Current: {settings.ActiveChord ?? settings.Shortcut}");
+                Console.WriteLine($"Press the new shortcut for {label} (Esc cancels)...");
+
+                var captured = HotkeyCapture.Capture(TimeSpan.FromSeconds(20), cancellationToken);
+                if (captured.Chord is null)
+                {
+                    if (captured.Error is not null)
+                    {
+                        Console.Error.WriteLine("error: " + captured.Error);
+                        return 1;
+                    }
+
+                    Console.WriteLine("cancelled.");
+                    return 0;
+                }
+
+                chord = captured.Chord;
+            }
+
+            settings.Enabled = true;
+            settings.Shortcut = chord!.Display;
+            ConfigStore.Save(config);
+
+            var status = await ReloadAsync(cancellationToken);
+            Console.WriteLine($"{label} shortcut set to {chord.Display}.");
+            PrintHotkeyState(target, config, status);
+
+            if (status is null)
+            {
+                Console.WriteLine("Start the server so the shortcut works: winTTSas start");
+            }
+
+            return 0;
+        }
+
+        Console.Error.WriteLine($"usage: winTTSas {command} [on|off|change [shortcut]]");
+        return 1;
+    }
+
+    private static HotkeyBindingSettings HotkeySettingsFor(AppConfig config, HotkeyTarget target) =>
+        target == HotkeyTarget.SelectedText
+            ? config.Hotkeys.SelectedText
+            : config.Hotkeys.Clipboard;
+
+    private static void PrintHotkeyState(
+        HotkeyTarget target,
+        AppConfig config,
+        StatusInfo? status)
+    {
+        var settings = HotkeySettingsFor(config, target);
+        var chord = settings.ActiveChord ?? settings.Shortcut;
+        var state = settings.Enabled ? "on" : "off";
+        var suffix = "";
+
+        if (settings.Enabled)
+        {
+            suffix = status is null
+                ? ", server not running"
+                : string.IsNullOrEmpty(status.HotkeyError)
+                    ? ", active"
+                    : ", unavailable";
+        }
+
+        var label = target == HotkeyTarget.SelectedText ? "selected text" : "clipboard";
+        Console.WriteLine($"{label}: {chord} ({state}{suffix})");
+
+        if (status is not null && !string.IsNullOrEmpty(status.HotkeyError))
+        {
+            Console.Error.WriteLine("warning: " + status.HotkeyError);
+        }
+    }
+
+    private static string DescribeHotkey(HotkeyBindingSettings settings) =>
+        !settings.Enabled ? "off" : settings.ActiveChord ?? settings.Shortcut;
+
     private static async Task<int> PortAsync(
         string[] args,
         CancellationToken cancellationToken)
@@ -1219,6 +1361,13 @@ Options:
             Console.WriteLine($"binary:   {status.FfmpegPath}");
         }
         Console.WriteLine($"sanitize: {(status.Sanitize ? "on" : "off")} (markdown {status.Markdown})");
+        Console.WriteLine($"hotkeys:  {(string.IsNullOrEmpty(status.SelectedTextHotkey) ? "off" : status.SelectedTextHotkey)} (selection), {(string.IsNullOrEmpty(status.ClipboardHotkey) ? "off" : status.ClipboardHotkey)} (clipboard)");
+        if (!string.IsNullOrEmpty(status.HotkeyError))
+        {
+            Console.WriteLine($"hotkey:   {status.HotkeyError}");
+        }
+
+        Console.WriteLine($"speech:   {(status.Speaking ? "speaking" : "idle")}");
         Console.WriteLine($"logs:     {status.LogDir}");
     }
 
@@ -1240,6 +1389,7 @@ Options:
         Console.WriteLine($"logon:    {(IsLogonEnabled() ? "on" : "off")}");
         Console.WriteLine($"adapter:  {adapter.Detail}");
         Console.WriteLine($"sanitize: {(config.Sanitize ? "on" : "off")} (markdown {config.Markdown})");
+        Console.WriteLine($"hotkeys:  {DescribeHotkey(config.Hotkeys.SelectedText)} (selection), {DescribeHotkey(config.Hotkeys.Clipboard)} (clipboard)");
         Console.WriteLine($"config:   {AppPaths.ConfigFile}");
         Console.WriteLine($"logs:     {AppPaths.LogDir}");
     }
