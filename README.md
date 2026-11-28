@@ -20,6 +20,8 @@ client -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
 > runtime and ffmpeg, binds to `127.0.0.1` only, and keeps config, cache, and
 > logs under `%APPDATA%` / `%LOCALAPPDATA%`.
 
+![The winTTSas test page, with text, voice, format, speed, sanitize, and a synthesized clip](docs/images/test-page.png)
+
 ## Highlights
 
 - **Any OpenAI TTS client.** Point the base URL at
