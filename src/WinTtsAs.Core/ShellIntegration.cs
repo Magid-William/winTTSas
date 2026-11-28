@@ -200,6 +200,27 @@ public static class ShellIntegration
         }
     }
 
+    /// <summary>
+    /// True when the MSI installed this copy (<c>InstalledBy=MSI</c> under
+    /// <c>HKCU\Software\winTTSas</c>), so the app must not create a second
+    /// shortcut or Apps &amp; Features entry.
+    /// </summary>
+    public static bool IsMsiInstall()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(InstallKeyPath);
+            return string.Equals(
+                key?.GetValue("InstalledBy") as string,
+                "MSI",
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static void WriteInstallMarker(InstallInfo info)
     {
         using var key = Registry.CurrentUser.CreateSubKey(InstallKeyPath, writable: true)

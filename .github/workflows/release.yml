@@ -88,6 +88,24 @@ jobs:
           New-Item -ItemType Directory -Force tools\NaturalVoiceSAPIAdapter | Out-Null
           Expand-Archive -LiteralPath $zip -DestinationPath tools\NaturalVoiceSAPIAdapter -Force
 
+      - name: Cache WiX
+        id: wix-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.dotnet/tools
+            ~/.wix
+          key: wix-5.0.2-ui-util
+
+      - name: Install WiX
+        if: steps.wix-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2
+
       - name: Publish
         shell: pwsh
         run: .\scripts\publish.ps1
@@ -101,6 +119,10 @@ jobs:
               -DestinationPath dist\winTTSas.zip `
               -CompressionLevel Optimal
 
+      - name: Build MSI
+        shell: pwsh
+        run: .\scripts\make-msi.ps1 -SkipPublish
+
       - name: Create release
         shell: pwsh
         env:
@@ -109,11 +131,17 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $tag = "${{ github.ref_name }}"
 
+          $msi = Get-ChildItem dist\winTTSas-*-x64.msi |
+              Select-Object -First 1
+          if (-not $msi) {
+              throw 'The MSI was not built.'
+          }
+
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
               gh release delete $tag --yes
           }
 
-          gh release create $tag dist\winTTSas.zip `
+          gh release create $tag dist\winTTSas.zip $msi.FullName `
               --title $tag `
               --generate-notes

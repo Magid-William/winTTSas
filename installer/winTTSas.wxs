@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Per-user MSI for winTTSas.
+
+  The MSI owns the installed files, the Start Menu shortcut, the Apps and
+  Features entry, upgrades, and file removal. It deliberately does not touch
+  PATH, the logon Run key, the natural-voice adapter, or the default voice:
+  that is the setup step with the configure flag, which the Finish dialog
+  launches and which the uninstaller runs again with keep-files to undo the
+  PATH and logon entries.
+
+  Build with scripts\make-msi.ps1, which also generates the file components
+  from dist\winTTSas into installer\generated.wxs.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="winTTSas"
+           Manufacturer="Magid William"
+           Version="$(var.Version)"
+           UpgradeCode="C281CB4C-AE65-4F2B-8EC6-DA0EA958C675"
+           Scope="perUser"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <SummaryInformation
+        Description="winTTSas - local OpenAI-compatible text-to-speech server"
+        Manufacturer="Magid William" />
+
+    <MajorUpgrade
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of winTTSas is already installed. Uninstall it first, then run this installer again." />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="medium" />
+
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPCOMMENTS"
+              Value="Local OpenAI-compatible text-to-speech server for Windows voices." />
+    <Property Id="ARPHELPLINK" Value="https://github.com/Magid-William/winTTSas" />
+
+    <!-- The checkbox on the Finish dialog that runs the setup wizard with the
+         configure flag. Checked by default; UILevel keeps silent installs from
+         launching it. -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT"
+              Value="Configure winTTSas now (PATH, voices, default voice, start the server)" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="APPLICATIONFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.InstallerDir)\license.rtf" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(var.InstallerDir)\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(var.InstallerDir)\dialog.bmp" />
+
+    <Icon Id="AppIcon" SourceFile="$(var.InstallerDir)\app.ico" />
+
+    <!-- The server may be running during an upgrade or an uninstall; ask it to
+         close, then terminate the console process if it ignores the message
+         (the server has no window to handle WM_CLOSE). -->
+    <util:CloseApplication Id="CloseServer"
+                           Target="winTTSas-server.exe"
+                           CloseMessage="yes"
+                           Timeout="2"
+                           TerminateProcess="0"
+                           PromptToContinue="no"
+                           RebootPrompt="no" />
+
+    <!-- Upgrades remember the folder the current copy lives in, so a major
+         upgrade does not silently move the install back to the default path.
+         AppSearch runs before the old product is removed, so the marker is
+         still there. -->
+    <Property Id="APPLICATIONFOLDER">
+      <RegistrySearch Id="FindInstallDir"
+                      Root="HKCU"
+                      Key="Software\winTTSas"
+                      Name="InstallDir"
+                      Type="raw" />
+    </Property>
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="APPLICATIONFOLDER" Name="winTTSas" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="AppShortcut"
+                  Name="winTTSas"
+                  Description="winTTSas local text-to-speech server"
+                  Target="[APPLICATIONFOLDER]winTTSas.exe"
+                  WorkingDirectory="APPLICATIONFOLDER" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\winTTSas"
+                       Name="ShortcutInstalled"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <DirectoryRef Id="APPLICATIONFOLDER">
+      <Component Id="InstallMarker" Guid="*">
+        <!-- Read by the setup wizard's configure step and by the uninstaller. -->
+        <RegistryValue Root="HKCU"
+                       Key="Software\winTTSas"
+                       Name="InstallDir"
+                       Type="string"
+                       Value="[APPLICATIONFOLDER]"
+                       KeyPath="yes" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\winTTSas"
+                       Name="InstalledBy"
+                       Type="string"
+                       Value="MSI" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\winTTSas"
+                       Name="Version"
+                       Type="string"
+                       Value="$(var.Version)" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Main" Title="winTTSas" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="InstallMarker" />
+    </Feature>
+
+    <!-- Runs the console wizard after the wizard closes. -->
+    <CustomAction Id="ConfigureAfterInstall"
+                  FileRef="WinTtsAsCliExe"
+                  ExeCommand="setup --configure"
+                  Execute="immediate"
+                  Return="asyncNoWait" />
+
+    <CustomAction Id="UninstallCleanup"
+                  FileRef="WinTtsAsCliExe"
+                  ExeCommand="uninstall --yes --keep-files --keep-data"
+                  Execute="immediate"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <!-- Strip PATH and the logon entry while the exe is still on disk, but
+           let a major upgrade keep them: the new version only re-adds them if
+           the user runs the wizard again. -->
+      <Custom Action="UninstallCleanup" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <!-- UILevel 5 means a full UI, where the checkbox exists; tests and
+           unattended installs stay silent. -->
+      <Custom Action="ConfigureAfterInstall" After="InstallFinalize"
+              Condition="NOT Installed AND WIXUI_EXITDIALOGOPTIONALCHECKBOX=&quot;1&quot; AND UILevel=5" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

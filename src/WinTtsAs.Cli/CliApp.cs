@@ -97,7 +97,7 @@ Usage:
   winTTSas selectedText [on|off|change [shortcut]]
   winTTSas clipboard [on|off|change [shortcut]]
   winTTSas logon on|off
-  winTTSas setup [--yes] [--dir <path>] [--portable]
+  winTTSas setup [--yes] [--dir <path>] [--portable] [--configure]
                  [--skip-adapter] [--no-logon] [--skip-path]
                  [--skip-voice] [--skip-test] [--no-start] [--open]
   winTTSas uninstall [--yes] [--keep-data] [--keep-files] [--remove-adapter]
@@ -116,7 +116,8 @@ Notes:
   - selectedText and clipboard set global read-aloud hotkeys on the server.
   - setup copies the app to %LOCALAPPDATA%\Programs\winTTSas, adds it to PATH,
     registers natural voices, enables logon, and adds shortcuts. --portable
-    keeps the current folder instead of copying.
+    keeps the current folder instead of copying. --configure only configures
+    the copy the MSI installed: PATH, voices, logon, voice, and the server.
 """);
         return 0;
     }

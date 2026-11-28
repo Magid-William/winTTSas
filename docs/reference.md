@@ -8,13 +8,14 @@ app -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
      -> NaturalVoiceSAPIAdapter -> Narrator natural voices
 ```
 
-Working v0.6.1. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
+Working v0.7.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 
 ## Table of contents
 
 - [Installation and setup](#installation-and-setup)
   - [Release files](#release-files)
-  - [Install with the wizard](#install-with-the-wizard)
+  - [Install with the MSI](#install-with-the-msi)
+  - [Install from the zip](#install-from-the-zip)
   - [Manual setup](#manual-setup)
   - [Natural voices (optional)](#natural-voices-optional)
   - [Start the server](#start-the-server)
@@ -64,7 +65,14 @@ Working v0.6.1. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 
 ### Release files
 
-Extract `winTTSas.zip` anywhere you like, for example `C:\Tools\winTTSas`:
+Every release ships two ways to install the same program.
+
+`winTTSas-<version>-x64.msi` installs the app, adds a Start Menu shortcut, and
+registers it in **Apps & Features**. It is a per-user install: no admin prompt,
+nothing written outside your profile.
+
+`winTTSas.zip` is the portable copy. Extract it anywhere you like, for example
+`C:\Tools\winTTSas`:
 
 ```
 winTTSas\
@@ -78,17 +86,47 @@ winTTSas\
   docs\reference.md
 ```
 
-No installer is required. The app writes its config, cache, and logs under
-`%APPDATA%` and `%LOCALAPPDATA%`, so the program folder stays self-contained.
+The app writes its config, cache, and logs under `%APPDATA%` and
+`%LOCALAPPDATA%`, so the program folder stays self-contained either way.
 
-The next two sections are optional: run the wizard to get the `winTTSas`
-command on `PATH`, or keep the folder portable and call the executable directly.
+### Install with the MSI
 
-### Install with the wizard
+Download `winTTSas-<version>-x64.msi` from the
+[latest release](https://github.com/Magid-William/winTTSas/releases/latest) and
+open it. The wizard copies the files to `%LOCALAPPDATA%\Programs\winTTSas`
+(change it on the folder page if you like), shows the MIT license, and installs.
 
-The release is portable, so nothing has to be installed. The wizard is the
-convenient path: it puts `winTTSas` on your user `PATH` so the command works in
-any new terminal, and it wires up the parts that are easy to forget.
+Leave **Configure winTTSas now** checked on the last page. When the installer
+finishes it runs the same wizard the zip uses:
+
+```powershell
+winTTSas setup --configure
+```
+
+That step is what makes the command available: it adds the folder to your user
+`PATH` and verifies it, registers the natural voice adapter (one UAC prompt),
+enables start at login, lets you pick a default voice, speaks a test sentence,
+and starts the server. Accept the defaults with Enter.
+
+Upgrades reuse the folder you installed to, keep `PATH` and the logon entry, and
+show the same checkbox, so the new version is configured and started as well.
+
+If you clear the checkbox, run `winTTSas setup --configure` later from the
+install folder or from the Start Menu shortcut's folder
+(`%LOCALAPPDATA%\Programs\winTTSas\winTTSas.exe`).
+
+The MSI owns the files, the shortcut, and the Apps & Features entry. It does
+not create a second entry of its own, so `setup --configure` deliberately skips
+the shortcut and `winTTSas uninstall` steps that the zip wizard performs.
+
+> The executables are unsigned. SmartScreen may warn on first run; choose
+> **More info > Run anyway**.
+
+### Install from the zip
+
+The zip needs no installer. The wizard is the convenient path: it puts
+`winTTSas` on your user `PATH` so the command works in any new terminal, and it
+wires up the parts that are easy to forget.
 
 ```powershell
 cd C:\Tools\winTTSas   # or wherever you extracted the zip
@@ -125,6 +163,7 @@ Non-interactive use:
 | Flag | Effect |
 |---|---|
 | `--yes` | Accept every default; no prompts and no test speech |
+| `--configure` | Configure an existing copy: PATH, voices, logon, voice, server, but no copying and no shortcuts (used by the MSI) |
 | `--dir <path>` | Install folder (default `%LOCALAPPDATA%\Programs\winTTSas`) |
 | `--portable` | Keep the files where they are instead of copying |
 | `--skip-adapter` | Do not touch natural voice registration |
@@ -207,7 +246,7 @@ Without the wizard, `cd` into the folder and run `.\winTTSas.exe start`.
 the effective settings:
 
 ```
-winTTSas 0.6.1
+winTTSas 0.7.0
 state:    running (pid 14816)
 base URL: http://127.0.0.1:5178/v1
 voice:    Microsoft Andrew
@@ -331,18 +370,26 @@ running server, so no restart is needed except for `port`.
 ```powershell
 winTTSas setup                 # guided install
 winTTSas setup --yes           # defaults, no prompts
+winTTSas setup --configure     # configure the copy the MSI installed
 winTTSas install               # alias
 ```
 
 The wizard copies the release to `%LOCALAPPDATA%\Programs\winTTSas` by default,
 adds that folder to the user `PATH`, registers natural voices, enables logon
 startup, picks a default voice, and creates the Start Menu and Apps & Features
-entries. See [install with the wizard](#install-with-the-wizard) for the full
+entries. See [install from the zip](#install-from-the-zip) for the full
 walkthrough and the flag table.
 
 `setup` refuses to run without `--yes` when standard input is redirected, so
 scripts must pass it explicitly. `--portable` keeps the current folder instead
 of copying, and `--dir <path>` chooses a different install folder.
+
+`--configure` is what the MSI runs on its last page. It works in the folder the
+executable lives in, so there is no folder prompt and no copy, and it skips the
+Start Menu shortcut and Apps & Features entry the MSI already owns. Everything
+else (PATH, adapter, logon, voice, test speech, starting the server) is the same
+as a normal setup, so it is also useful after moving an MSI install or to
+re-register the adapter.
 
 ### Lifecycle
 
@@ -610,11 +657,20 @@ winTTSas uninstall --yes --remove-adapter
 | `--keep-files` | Keep the program folder |
 | `--remove-adapter` | Unregister the natural voice adapter |
 
-The uninstaller uses the `InstallDir` that `setup` wrote under
+The uninstaller uses the `InstallDir` that `setup` (or the MSI) wrote under
 `HKCU\Software\winTTSas`. When the running executable lives inside that folder,
 Windows cannot delete it; removal is scheduled for just after the process exits.
 Folders that are a drive root, a standard user folder, or that do not contain
 `winTTSas.exe` are never deleted.
+
+**MSI installs** are removed from **Settings > Apps > Installed apps** (or with
+`msiexec /x winTTSas-<version>-x64.msi`). The MSI runs
+`winTTSas uninstall --yes --keep-files --keep-data` first, so the server stops,
+`PATH` and the logon entry go away, and then Windows removes the files. Config,
+cache, logs, and the adapter registration are kept; run
+`winTTSas uninstall --remove-adapter` before uninstalling if you want those gone
+too. Upgrades keep `PATH` and the logon entry, and the installer's last page
+offers the same configure step as a fresh install.
 
 ### JSON output
 

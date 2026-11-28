@@ -24,6 +24,7 @@ public static partial class CliApp
         var noStart = HasFlag(args, "--no-start");
         var openTestPage = HasFlag(args, "--open");
         var requestedDir = ReadOptionValue(args, "--dir");
+        var configure = HasFlag(args, "--configure");
 
         if (HasFlag(args, "--help") || HasFlag(args, "-h"))
         {
@@ -51,12 +52,29 @@ public static partial class CliApp
         Console.WriteLine($"winTTSas {BuildInfo.Version} setup");
         Console.WriteLine();
 
-        if (portable && !string.IsNullOrWhiteSpace(requestedDir))
+        if (configure)
+        {
+            Console.WriteLine($"configuring the installed copy in {sourceDir}");
+
+            if (ShellIntegration.IsMsiInstall())
+            {
+                // The MSI owns the shortcut and its own Apps & Features entry;
+                // a leftover entry from an earlier zip install would be a double.
+                ShellIntegration.RemoveUninstallEntry();
+            }
+        }
+
+        if (portable && !string.IsNullOrWhiteSpace(requestedDir) && !configure)
         {
             Console.WriteLine("note: --portable keeps the current folder; ignoring --dir.");
         }
 
-        var installDir = portable
+        if (configure && !string.IsNullOrWhiteSpace(requestedDir))
+        {
+            Console.WriteLine("note: --configure uses this executable's folder; ignoring --dir.");
+        }
+
+        var installDir = portable || configure
             ? sourceDir
             : ResolveInstallDir(requestedDir, assumeYes);
 
@@ -91,7 +109,7 @@ public static partial class CliApp
             Console.WriteLine($"portable install: files stay in {installDir}");
             Console.WriteLine("keep this folder where it is; PATH and the adapter point at it.");
         }
-        else
+        else if (!configure)
         {
             Console.WriteLine($"using the files already in {installDir}");
         }
@@ -140,7 +158,7 @@ public static partial class CliApp
         var sizeKb = EstimateSizeKb(installDir);
         var exePath = Path.Combine(installDir, "winTTSas.exe");
 
-        if (File.Exists(exePath))
+        if (!configure && File.Exists(exePath))
         {
             var info = new ShellIntegration.InstallInfo(
                 installDir,
@@ -188,6 +206,8 @@ Installs winTTSas for the current user:
 
 Options:
   --yes              Accept every default; no prompts, no test speech
+  --configure        Set up the copy installed by the MSI: PATH, voices, logon,
+                     voice, and the server, without copying or adding shortcuts
   --dir <path>       Install folder (default %LOCALAPPDATA%\Programs\winTTSas)
   --portable         Keep the files where they are instead of copying
   --skip-adapter     Do not register the natural voice adapter
