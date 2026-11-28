@@ -8,7 +8,7 @@ app -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
      -> NaturalVoiceSAPIAdapter -> Narrator natural voices
 ```
 
-Working v0.6.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
+Working v0.6.1. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 
 ## Table of contents
 
@@ -207,7 +207,7 @@ Without the wizard, `cd` into the folder and run `.\winTTSas.exe start`.
 the effective settings:
 
 ```
-winTTSas 0.6.0
+winTTSas 0.6.1
 state:    running (pid 14816)
 base URL: http://127.0.0.1:5178/v1
 voice:    Microsoft Andrew
@@ -1143,6 +1143,11 @@ Result: about 460 MB on disk, about 194 MB zipped.
 - **No audio from `sample`**: run `winTTSas sample --devices`. Windows may be
   routing to a Bluetooth headset; pick the speaker index or change the default
   output device.
+- **"The operation was canceled by the user" while starting the server**: the
+  files still carry the Mark-of-the-Web from the downloaded zip, so the shell
+  refuses to run them. `setup` clears it on the installed copy; for a folder you
+  extracted by hand, unblock the zip (Properties → **Unblock**) or run
+  `Unblock-File .\winTTSas-server.exe`.
 - **No natural voices**: install Narrator voices, then run
   `scripts\install-adapter.ps1` elevated. `winTTSas list` should show at least
   one row with `Natural = yes`. If you moved the app folder, re-run the script.

@@ -184,6 +184,10 @@ Notes:
 
         RuntimeStore.Delete();
 
+        // A freshly extracted release carries the Mark-of-the-Web, which makes
+        // the shell refuse to run it ("The operation was canceled by the user").
+        ShellIntegration.UnblockFile(serverExe);
+
         var startInfo = new ProcessStartInfo(serverExe)
         {
             // ShellExecute avoids handing the hidden server the CLI's stdout/stderr
@@ -191,7 +195,8 @@ Notes:
             // pipeline to close even after the CLI has exited.
             UseShellExecute = true,
             WindowStyle = ProcessWindowStyle.Hidden,
-            WorkingDirectory = AppContext.BaseDirectory
+            WorkingDirectory = Path.GetDirectoryName(serverExe)
+                ?? AppContext.BaseDirectory
         };
 
         if (HasFlag(args, "--logon"))
@@ -199,7 +204,18 @@ Notes:
             startInfo.Arguments = "--logon";
         }
 
-        var process = Process.Start(startInfo);
+        Process? process;
+        try
+        {
+            process = Process.Start(startInfo);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"could not start the server: {ex.Message}");
+            Console.Error.WriteLine($"run it directly to see why: \"{serverExe}\"");
+            return 1;
+        }
+
         if (process is null)
         {
             Console.Error.WriteLine("could not start the server process.");
@@ -1397,7 +1413,8 @@ Options:
     private static async Task<int> LogonAsync(
         string[] args,
         CancellationToken cancellationToken,
-        string? serverExeOverride = null)
+        string? serverExeOverride = null,
+        bool startNow = true)
     {
         var sub = args.Length > 0 ? args[0].ToLowerInvariant() : "";
 
@@ -1413,6 +1430,11 @@ Options:
             using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
             key?.SetValue(RunValueName, $"\"{serverExe}\" --logon");
             Console.WriteLine("Logon startup enabled.");
+
+            if (!startNow)
+            {
+                return 0;
+            }
 
             if (await ControlPipeClient.GetStatusAsync(300, cancellationToken) is null)
             {

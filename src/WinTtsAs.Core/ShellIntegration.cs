@@ -57,6 +57,64 @@ public static class ShellIntegration
         CreateStartMenuShortcut(info.ExePath, info.InstallDir);
     }
 
+    /// <summary>
+    /// Removes the Mark-of-the-Web (the <c>Zone.Identifier</c> stream) from one
+    /// file. While it is set the shell refuses to launch the executable and
+    /// SmartScreen asks about every run.
+    /// </summary>
+    /// <returns><c>true</c> when a stream was removed.</returns>
+    public static bool UnblockFile(string path)
+    {
+        var zone = path + ":Zone.Identifier";
+
+        try
+        {
+            if (!File.Exists(zone))
+            {
+                return false;
+            }
+
+            File.Delete(zone);
+            return true;
+        }
+        catch
+        {
+            // Missing stream, or a file system that cannot hold one.
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Removes the Mark-of-the-Web (the <c>Zone.Identifier</c> stream) from
+    /// every file in <paramref name="directory"/>, the way an installer does
+    /// for the files it copies out of a downloaded package.
+    /// </summary>
+    /// <returns>How many files were unblocked.</returns>
+    public static int UnblockFiles(string directory)
+    {
+        var unblocked = 0;
+
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(
+                         directory,
+                         "*",
+                         SearchOption.AllDirectories))
+            {
+                if (UnblockFile(file))
+                {
+                    unblocked++;
+                }
+            }
+        }
+        catch
+        {
+            // Enumeration failed; leave the rest alone.
+        }
+
+        return unblocked;
+    }
+
     public static void Uninstall()
     {
         RemoveStartMenuShortcut();

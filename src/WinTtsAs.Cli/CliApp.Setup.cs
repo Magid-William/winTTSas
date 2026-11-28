@@ -97,6 +97,21 @@ public static partial class CliApp
         }
 
         Console.WriteLine();
+
+        // Files extracted from a downloaded zip keep the Mark-of-the-Web, which
+        // makes the shell refuse to start the server with "The operation was
+        // canceled by the user". Clear it on both copies before launching.
+        var unblocked = ShellIntegration.UnblockFiles(installDir);
+        if (!sameLocation)
+        {
+            ShellIntegration.UnblockFiles(sourceDir);
+        }
+        if (unblocked > 0)
+        {
+            Console.WriteLine(
+                $"unblocked {unblocked} downloaded file(s) so Windows stops asking about them");
+        }
+
         await StepAdapterAsync(installDir, skipAdapter, assumeYes, cancellationToken);
         StepPath(installDir, skipPath);
         await StepServerAsync(
@@ -397,27 +412,42 @@ Options:
         var serverExe = Path.Combine(installDir, "winTTSas-server.exe");
         var logonWasEnabled = IsLogonEnabled();
 
-        var enableLogon = !skipLogon &&
-            (logonWasEnabled || assumeYes || Confirm("Start winTTSas at login?", defaultYes: true));
-
-        if (enableLogon)
+        // A failure to start the server must not abort the rest of the install:
+        // PATH, the shortcut, and the voice are still worth setting up.
+        try
         {
-            if (await LogonAsync(["on"], cancellationToken, serverExe) != 0)
+            var enableLogon = !skipLogon &&
+                (logonWasEnabled || assumeYes ||
+                 Confirm("Start winTTSas at login?", defaultYes: true));
+
+            if (enableLogon)
+            {
+                if (await LogonAsync(
+                        ["on"],
+                        cancellationToken,
+                        serverExe,
+                        startNow: !noStart) != 0)
+                {
+                    Console.WriteLine("warning: could not start the server; run: winTTSas start");
+                }
+
+                return;
+            }
+
+            if (logonWasEnabled && skipLogon)
+            {
+                await LogonAsync(["off"], cancellationToken);
+            }
+
+            if (!noStart && await StartAsync(["--quiet"], cancellationToken, serverExe) != 0)
             {
                 Console.WriteLine("warning: could not start the server; run: winTTSas start");
             }
-
-            return;
         }
-
-        if (logonWasEnabled && skipLogon)
+        catch (Exception ex)
         {
-            await LogonAsync(["off"], cancellationToken);
-        }
-
-        if (!noStart && await StartAsync(["--quiet"], cancellationToken, serverExe) != 0)
-        {
-            Console.WriteLine("warning: could not start the server; run: winTTSas start");
+            Console.WriteLine($"warning: could not start the server: {ex.Message}");
+            Console.WriteLine("run: winTTSas start");
         }
     }
 
