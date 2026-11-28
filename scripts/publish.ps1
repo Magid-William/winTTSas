@@ -60,7 +60,7 @@ Copy-Item (Join-Path $root 'scripts\install-adapter.ps1') $scriptsOut -Force
 
 $docsOut = Join-Path $out 'docs'
 New-Item -ItemType Directory -Force -Path $docsOut | Out-Null
-Copy-Item (Join-Path $root 'docs\*') $docsOut -Force
+Copy-Item (Join-Path $root 'docs\*') $docsOut -Recurse -Force
 
 Copy-Item (Join-Path $root 'README.md') $out -Force
 Copy-Item (Join-Path $root 'LICENSE') $out -Force
