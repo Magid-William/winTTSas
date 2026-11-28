@@ -20,7 +20,15 @@ if (-not (Test-Path (Join-Path $dist 'winTTSas-server.exe'))) {
     throw "winTTSas-server.exe is missing from $dist"
 }
 
-$wix = Get-Command wix -ErrorAction SilentlyContinue
+$wix = (Get-Command wix -ErrorAction SilentlyContinue).Source
+if (-not $wix) {
+    # Global dotnet tools are not always on PATH (CI, fresh shells).
+    $local = Join-Path $env:USERPROFILE '.dotnet\tools\wix.exe'
+    if (Test-Path $local) {
+        $wix = $local
+    }
+}
+
 if (-not $wix) {
     throw @'
 The WiX tool was not found. Install it once:
@@ -142,7 +150,7 @@ $null = $sb.AppendLine('</Wix>')
 
 Write-Host "winTTSas ${version}: $($files.Count) files, $($directories.Count - 1) folders"
 
-& $wix.Source build `
+& $wix build `
     (Join-Path $installer 'winTTSas.wxs') `
     $generated `
     -arch x64 `
