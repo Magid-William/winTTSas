@@ -2,38 +2,68 @@
 
 **Pronunciation:** win - tee tee - es ae es.
 
-Local, OpenAI-compatible text-to-speech for Windows. It serves the voices
+Local, OpenAI-compatible text-to-speech for Windows. winTTSas serves the voices
 already installed on the machine through `/v1/audio/speech`, so any OpenAI TTS
 client can use them without cloud calls, accounts, or API keys.
 
-```
+[![release](https://img.shields.io/github/v/release/Magid-William/winTTSas?label=release)](https://github.com/Magid-William/winTTSas/releases/latest)
+[![license](https://img.shields.io/github/license/Magid-William/winTTSas)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20x64-0078D4)](docs/reference.md#requirements)
+[![cloud](https://img.shields.io/badge/cloud-none-success)](docs/reference.md)
+
+```text
 client -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
                                             -> NaturalVoiceSAPIAdapter -> Narrator
 ```
 
-## Table of contents
+> **No installer, no admin prompt, no network.** A release bundles the .NET 8
+> runtime and ffmpeg, binds to `127.0.0.1` only, and keeps config, cache, and
+> logs under `%APPDATA%` / `%LOCALAPPDATA%`.
 
-- [Introduction](#introduction)
-- [Getting started](#getting-started)
-  - [CLI defaults vs API overrides](#cli-defaults-vs-api-overrides)
-- [Global hotkeys](#global-hotkeys)
-- [Sanitization](#sanitization)
-- [URL routes](#url-routes)
-- [Flags](#flags)
-  - [Server and CLI](#server-and-cli)
-  - [sample](#sample)
-- [Licenses](#licenses)
+## Highlights
 
-## Introduction
+- **Any OpenAI TTS client.** Point the base URL at
+  `http://127.0.0.1:5178/v1` and use `local` as the API key.
+- **The voices Windows already has.** Classic SAPI voices work immediately;
+  Narrator natural voices come through the bundled NaturalVoiceSAPIAdapter.
+- **Six output formats.** `mp3`, `wav`, `opus`, `aac`, `flac`, and `pcm`,
+  produced by the bundled ffmpeg.
+- **Read aloud from anywhere.** `Ctrl+Alt+R` reads the selection, `Ctrl+Alt+C`
+  reads the clipboard, and pressing the shortcut again stops.
+- **Friendly to scripts.** `sample` speaks or saves one line, URL routes
+  synthesize without a JSON body, and `status --json` reports the real values.
+- **Nothing to babysit.** One hidden background process, optional start at
+  login, config hot-reload, and a local WAV cache.
 
-winTTSas is a small background server plus a CLI. It speaks through Windows
-SAPI5, including Narrator natural voices through the bundled
-NaturalVoiceSAPIAdapter. Responses support `mp3`, `wav`, `opus`, `aac`, `flac`,
-and `pcm`, produced with the bundled ffmpeg.
+## Quick start
 
-A published release is self-contained: it includes the .NET runtime and ffmpeg,
-binds to `127.0.0.1` only, and stores config, cache, and logs under
-`%APPDATA%` / `%LOCALAPPDATA%`.
+1. **Extract the release** anywhere, for example `C:\Tools\winTTSas`. There is
+   no installer; run `winTTSas.exe` from the folder or add it to `PATH`.
+
+2. **Start the server.**
+
+   ```powershell
+   .\winTTSas.exe start
+   ```
+
+   It prints the effective settings and listens on `http://127.0.0.1:5178`.
+   `start` is idempotent, `stop` shuts it down, and
+   `start --foreground` keeps it in the console. `winTTSas logon on` starts the
+   hidden server at login instead.
+
+3. **Hear it.**
+
+   ```powershell
+   .\winTTSas.exe sample "Hello from winTTSas."
+   ```
+
+   Silent? `.\winTTSas.exe sample --devices` lists the outputs; pass one with
+   `--device <n>`.
+
+4. **Open the test page:** <http://127.0.0.1:5178/>. This also works:
+   <http://127.0.0.1:5178/v1/audio/speech/voice/1/speed/1.2/text/Hello%20from%20winTTSas>.
+
+## Use it from a client
 
 ```text
 Base URL: http://127.0.0.1:5178/v1
@@ -42,326 +72,105 @@ Model:    tts-1
 Voice:    alloy
 ```
 
-The full CLI, API, and configuration reference is in
-[docs/reference.md](docs/reference.md).
+Any OpenAI TTS client works, and `curl.exe` is enough:
 
-## Getting started
+```powershell
+$body = '{"model":"tts-1","input":"Hello from Windows","voice":"alloy","response_format":"mp3"}'
+curl.exe -s -X POST http://127.0.0.1:5178/v1/audio/speech `
+  -H "Content-Type: application/json" -d $body -o hello.mp3
+```
 
-1. **Extract the release.** There is no installer and no admin prompt. Run
-   `winTTSas.exe` from the folder, or add that folder to `PATH`.
+`voice` accepts an OpenAI alias, a SAPI name, a slug, or a 1-based index from
+`winTTSas list`. Set the defaults once and override them per request:
 
-2. **Start the server.**
-
-   ```powershell
-   .\winTTSas.exe start
-   ```
-
-   It prints the effective settings and listens on
-   `http://127.0.0.1:5178`. `start` is idempotent; `stop` shuts it down.
-
-3. **Test it locally.**
-
-   ```powershell
-   .\winTTSas.exe sample "Hello from winTTSas."
-   ```
-
-   No client or JSON needed either: open
-   <http://127.0.0.1:5178/v1/audio/speech/voice/1/speed/1.2/text/Hello%20from%20winTTSas>
-   in a browser and it plays.
-
-   If that is silent, run `.\winTTSas.exe sample --devices` and pass the right
-   index with `--device`.
-
-4. **Natural voices (optional).** Classic SAPI voices work immediately. For
-   Narrator voices, install them in **Settings > Accessibility > Narrator >
-   Add natural voices**, then run this once from an elevated PowerShell:
-
-   ```powershell
-   .\scripts\install-adapter.ps1
-   ```
-
-   `.\winTTSas.exe list` shows a `Natural` column. Keep
-   `tools\NaturalVoiceSAPIAdapter` in place after registering it.
-
-5. **Start at login (optional).**
-
-   ```powershell
-   .\winTTSas.exe logon on
-   .\winTTSas.exe logon       # show state
-   .\winTTSas.exe logon off   # remove
-   ```
-
-   This adds a hidden per-user entry under
-   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
-
-### CLI defaults vs API overrides
-
-`winTTSas select`, `speed`, `volume`/`gain`, and `format` set the defaults used
-when a request omits a field. Each request can override those defaults; the
-precedence is **request > CLI > built-in**.
-
-| Setting | CLI default | Request override |
+| Setting | Set once | Override per request |
 |---|---|---|
 | Voice | `winTTSas select` | `voice` |
 | Speed | `winTTSas speed` | `speed` |
 | Gain | `winTTSas volume` / `gain` | `gain_db` |
 | Format | `winTTSas format` | `response_format` |
 
-```powershell
-winTTSas speed 1.5
-winTTSas format mp3
-
-# Uses the CLI defaults above
-curl.exe -s http://127.0.0.1:5178/v1/audio/speech `
-  -H "Content-Type: application/json" `
-  -d '{"input":"Default speed and format","voice":"alloy"}' -o default.mp3
-
-# Overrides speed and gain for this request only
-curl.exe -s http://127.0.0.1:5178/v1/audio/speech `
-  -H "Content-Type: application/json" `
-  -d '{"input":"Faster and louder","voice":"alloy","speed":2.5,"gain_db":3}' -o faster.mp3
-```
-
-`winTTSas status` shows the current defaults. Response headers
-`X-WinTTSas-Speed`, `X-WinTTSas-Rate`, and `X-WinTTSas-Gain-Db` show what a
-request actually used.
+Clients that only accept a URL can put the values in the path:
+`http://127.0.0.1:5178/v1/audio/speech/voice/1/speed/1.2/text/Hello`. See
+[synthesis from a URL](docs/reference.md#synthesis-from-a-url).
 
 ## Global hotkeys
 
-The server registers two global shortcuts while it runs:
+While the server runs, two shortcuts work in any application:
 
 | Shortcut | Action |
 |---|---|
 | `Ctrl+Alt+R` | Read the selected text aloud |
 | `Ctrl+Alt+C` | Read the clipboard aloud |
 
-Pressing either shortcut while something is speaking stops it, and pressing it
-again reads. Selected text is copied with `Ctrl+C`, then the previous plain-text
-clipboard is put back, so reading a selection does not cost you the clipboard.
+Press either shortcut while speech is playing to stop it. The selection is
+copied with `Ctrl+C`, then the previous plain-text clipboard is restored.
 
 ```powershell
-winTTSas selectedText                      # shortcut and whether it is active
-winTTSas selectedText on
+winTTSas selectedText               # Ctrl+Alt+R (on, active)
 winTTSas selectedText off
-winTTSas selectedText change               # press the new chord; Esc cancels
-winTTSas selectedText change Ctrl+Shift+R  # or pass it directly
-winTTSas clipboard ...                     # same four forms
+winTTSas selectedText change        # press the new chord; Esc cancels
+winTTSas clipboard ...              # same four forms
 ```
 
-The hotkeys live in the server, so `winTTSas start` (or `logon on`) must be
-running for them to work. `winTTSas status` shows both shortcuts and whether
-they registered; if another app already owns one, the replacement is reported
-instead of failing silently.
+Both chords are configurable, reported by `winTTSas status`, and only reach
+non-elevated windows. Details: [global hotkeys](docs/reference.md#global-hotkeys).
 
-Limits worth knowing:
+## Natural voices (optional)
 
-- Keyboard input and the clipboard are blocked towards elevated windows. The
-  hotkey then reads nothing and logs it.
-- In a console with no selection, the injected `Ctrl+C` can interrupt the
-  running command; select the text first.
-- The clipboard restore covers plain text. Images or rich formats copied by the
-  selection are gone afterwards.
+Classic SAPI voices work immediately. For Narrator voices, install them in
+**Settings > Accessibility > Narrator > Add natural voices**, then run once from
+an elevated PowerShell:
 
-## Sanitization
+```powershell
+.\scripts\install-adapter.ps1
+```
 
-Markdown and LLM-style text is converted to speech-friendly plain text before
-synthesis. It is on by default for both the API and `sample`.
+`winTTSas list` shows a `Natural` column. Keep `tools\NaturalVoiceSAPIAdapter`
+in place after registering it.
 
-| Input | Spoken |
+## Documentation
+
+The complete reference — every command, flag, URL route, request field, config
+key, and error — is in **[docs/reference.md](docs/reference.md)**.
+
+| I want to… | Go to |
 |---|---|
-| `## Headline` | `Headline.` |
-| `**bold**`, `*italic*` | `bold`, `italic` |
-| `- item` | `item.` |
-| `[OpenAI](https://openai.com)` | `OpenAI` |
-| `https://example.com` | `link` by default |
-| `` `code` `` | `code` |
-| fenced code block | `code block` |
-| Markdown table | flattened rows |
-| `—` | `,` |
-| `→` | `right arrow` |
-| `×` | `times` |
+| See every command and flag | [CLI reference](docs/reference.md#cli-reference) |
+| Set the default voice, speed, gain, or format | [Defaults](docs/reference.md#defaults) |
+| Synthesize without a JSON body | [Synthesis from a URL](docs/reference.md#synthesis-from-a-url) |
+| See every endpoint | [HTTP API](docs/reference.md#http-api) |
+| Tune markdown and symbol sanitization | [Sanitization](docs/reference.md#sanitization) |
+| Edit `config.json` | [Configuration](docs/reference.md#configuration) |
+| Play, save, or pick a device with `sample` | [Sample playback](docs/reference.md#sample-playback) |
+| Fix silence, a 401, or a port clash | [Troubleshooting](docs/reference.md#troubleshooting) |
+| Build and publish from source | [Build from source](docs/reference.md#build-from-source) |
 
-Settings live in `config.json`:
+## How it works
 
-```json
-{
-  "sanitize": true,
-  "markdown": "auto",
-  "urlMode": "link",
-  "codeMode": "label",
-  "inlineCodeMode": "speak",
-  "tableMode": "flatten",
-  "textReplacements": {
-    "™": " trademark "
-  }
-}
-```
-
-| Setting | Default | Values |
-|---|---|---|
-| `sanitize` | `true` | on/off |
-| `markdown` | `auto` | `auto`, `on`, `off` |
-| `urlMode` | `link` | `skip`, `link`, `domain`, `speak` |
-| `codeMode` | `label` | `label`, `skip`, `speak` |
-| `inlineCodeMode` | `speak` | `speak`, `label`, `skip` |
-| `tableMode` | `flatten` | `flatten`, `skip` |
-
-```powershell
-winTTSas sanitize                  # show modes
-winTTSas sanitize on
-winTTSas sanitize --test "## Hi`nA — B → C"
-winTTSas markdown auto             # auto, on, or off
-winTTSas sample --raw "## Keep symbols and Markdown"
-```
-
-API requests can override the global setting with `"sanitize": false`; URL forms
-accept `sanitize/off`. `textReplacements` overrides the built-in symbol table,
-and an empty replacement removes the character.
-
-## URL routes
-
-Every synthesis form is available with and without `/v1`, nested under the
-speech endpoint or as a shorthand. Path values win over query values, and both
-win over JSON body fields.
-
-| Method | Route | Form |
-|---|---|---|
-| `POST` | `/v1/audio/speech` | JSON body (OpenAI standard) |
-| `POST` | `/audio/speech` | Alias without `/v1` |
-| `GET` | `/v1/audio/speech?input=...` | Query parameters |
-| `GET` | `/audio/speech?input=...` | Alias without `/v1` |
-| `GET` | `/v1/audio/speech/{key}/{value}/...` | URL values, nested |
-| `GET` | `/audio/speech/{key}/{value}/...` | Alias without `/v1` |
-| `GET` | `/v1/{key}/{value}/...` | URL values, shorthand |
-| `GET` | `/audio/{key}/{value}/...` | Alias without `/v1` |
-| `POST` | `/v1/audio/speech/{key}/{value}/...` | URL values plus JSON body |
-| `POST` | `/audio/speech/{key}/{value}/...` | Alias without `/v1` |
-| `POST` | `/v1/{key}/{value}/...` | URL values plus body, shorthand |
-| `POST` | `/audio/{key}/{value}/...` | Alias without `/v1` |
-
-Utility routes:
-
-| Method | Route | Purpose |
-|---|---|---|
-| `GET` | `/v1/models` | Model list |
-| `GET` | `/v1/audio/voices` | Installed voices |
-| `GET` | `/health` | Status |
-| `GET` | `/doctor` | Diagnostics |
-| `GET` | `/` | Browser test page |
-
-Path keys: `voice`, `speed`, `gain_db` (`gain`, `volume`), `response_format`
-(`format`), `input` (`text`), `sanitize`, and `model`. Pairs can be in any order,
-a trailing slash is ignored, and `%2F` means a literal `/` in text.
-
-```powershell
-# JSON body
-curl.exe -s -X POST http://127.0.0.1:5178/v1/audio/speech `
-  -H "Content-Type: application/json" `
-  -d '{"input":"Hello","voice":"alloy","response_format":"mp3"}' -o hello.mp3
-
-# Query parameters
-curl.exe -s "http://127.0.0.1:5178/v1/audio/speech?input=Hello&voice=1&speed=1.2&format=wav" -o hello.wav
-
-# Path values, GET: open in a browser
-http://127.0.0.1:5178/v1/audio/speech/voice/1/speed/1.2/text/Hello
-
-# Path values, POST: body supplies the text
-curl.exe -s -X POST "http://127.0.0.1:5178/v1/voice/1/speed/0.9" `
-  -H "Content-Type: application/json" `
-  -d '{"input":"Hello","response_format":"mp3"}' -o hello.mp3
-```
-
-## Flags
-
-### Server and CLI
-
-| Flag | Applies to | Meaning |
-|---|---|---|
-| `--foreground` | `start` | Run the server in this console instead of hidden |
-| `--quiet` | `start` | Print only the base URL |
-| `--json` | `status`, `list` | Machine-readable output |
-| `--yes` | `uninstall` | Skip the confirmation prompt |
-| `--keep-data` | `uninstall` | Keep config, cache, and logs |
-| `--remove-adapter` | `uninstall` | Unregister the natural voice adapter |
-| `-h`, `--help` | global | Show help |
-| `-v`, `--version` | global | Show version |
-
-```powershell
-winTTSas start --foreground
-winTTSas start --quiet > url.txt
-winTTSas status --json
-winTTSas list --json
-winTTSas uninstall --yes
-winTTSas uninstall --yes --keep-data
-winTTSas uninstall --yes --remove-adapter
-winTTSas --help
-winTTSas --version
-```
-
-### `sample`
-
-`sample` plays through the local sound card by default, or writes a file with
-`--save`; it never changes config. Flags may appear before or after the text and
-also accept `--flag=value`.
-
-| Flag | Meaning |
-|---|---|
-| `--speed <0.25-4.0>` | Speed for this sample |
-| `--volume <dB>` | Gain in dB (`+2`, `-3`) |
-| `--gain <dB>` | Alias for `--volume` |
-| `--level <0-100>` | SAPI volume, separate from gain |
-| `--voice <index\|name\|slug>` | Strict voice selection |
-| `--save <path>` | Write audio to a file instead of playing (alias `-o`) |
-| `--format <format>` | Output format for `--save`; inferred from the extension |
-| `--raw` | Skip markdown and symbol sanitization |
-| `--device <n>` | Output device index |
-| `--devices` | List audio outputs and exit |
-| `--help` | Show sample usage |
-| `--` | Treat everything after as literal text |
-
-```powershell
-winTTSas sample "Default settings."
-winTTSas sample "Faster." --speed 2
-winTTSas sample "Louder." --volume +6
-winTTSas sample "Quieter." --gain -3
-winTTSas sample "Half SAPI level." --level 50
-winTTSas sample --voice 1 "Selected by index."
-winTTSas sample --voice andrew "Selected by slug."
-winTTSas sample --device 1 "Selected output device."
-winTTSas sample --devices
-winTTSas sample --help
-winTTSas sample -- "--dashes are spoken as text"
-winTTSas sample --speed=2 --gain=+2 "Equals syntax."
-
-# Save instead of play; format comes from the extension
-winTTSas sample "Hello" --save hello.mp3
-winTTSas sample "Hello" --save hello.wav
-winTTSas sample --voice andrew --speed 1.2 --volume +3 --save hello.flac
-
-# Force a format regardless of the extension
-winTTSas sample "Hello" --save output.bin --format mp3
-
-# Bypass markdown and symbol sanitization
-winTTSas sample --raw "## Literal — text"
-```
+- Synthesis runs on dedicated STA worker threads with a bounded queue; SAPI is
+  never called from request threads.
+- Long input is split at sentence boundaries, synthesized as WAV, concatenated,
+  then transcoded once with ffmpeg.
+- Sanitization runs before normalization, and the sanitized text is the cache
+  key, so changing the policy invalidates cached audio.
+- Config hot-reloads from disk on the next request; the CLI also pokes the
+  running server over a per-user named pipe.
+- Canonical WAVs are cached under `%LOCALAPPDATA%\winTTSas\cache`; logs and cache
+  keys never contain plaintext text.
+- Global hotkeys are registered by the server itself, and local playback pads a
+  clip so a sleeping audio device cannot clip the first phoneme.
 
 ## Licenses
 
-- **Windows voices.** winTTSas calls the voices installed on the machine
-  through the Windows SAPI API. It does not include or redistribute voice data
-  and does not bypass Microsoft's licensing; users need a licensed Windows
-  install.
-- **ffmpeg.** The bundle contains a GPLv3 build from gyan.dev. Its license is at
-  `tools\ffmpeg\LICENSE`, and `tools\ffmpeg\README-ffmpeg.txt` lists the exact
-  source commit and build links. Redistributing the bundle means complying with
-  GPLv3, including making the corresponding ffmpeg source available.
-- **NaturalVoiceSAPIAdapter.** MIT, © 2024 gexgd0419. Its license is in
-  `docs\NaturalVoiceSAPIAdapter-LICENSE.txt`; keep it with the adapter when
-  redistributing.
-- **Markdig.** BSD-2-Clause, © 2016-2026 Alexandre Mutel. Its license is in
-  `docs\Markdig-LICENSE.txt`.
-- **.NET 8 runtime.** MIT, © .NET Foundation and Contributors. Self-contained
-  builds embed it; `licenses\` contains Microsoft's `LICENSE.TXT` and
-  third-party notices.
-- **This project.** MIT, © 2026 Magid William. See [LICENSE](LICENSE).
-- **No warranty.** Provided as-is, without support or liability.
+winTTSas is MIT, © 2026 Magid William. It bundles or depends on:
+
+- **ffmpeg** — GPLv3 build from gyan.dev; license and source links live in
+  `tools\ffmpeg`.
+- **NaturalVoiceSAPIAdapter** — MIT, © 2024 gexgd0419.
+- **Markdig** — BSD-2-Clause, © 2016-2026 Alexandre Mutel.
+- **.NET 8 runtime** — MIT, © .NET Foundation and Contributors.
+
+Windows voices are licensed with Windows and are never redistributed. Full
+notices are in [the reference](docs/reference.md#licenses) and `licenses\`.
+Provided as-is, without support or liability.
