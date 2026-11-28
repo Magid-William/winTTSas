@@ -16,6 +16,8 @@ public sealed class FfmpegTranscoder
     private readonly string _path;
     private readonly string _mp3Bitrate;
     private readonly ILogger? _log;
+    private readonly object _filterLock = new();
+    private HashSet<string>? _filters;
 
     public FfmpegTranscoder(string path, string mp3Bitrate, ILogger? log = null)
     {
@@ -33,22 +35,49 @@ public sealed class FfmpegTranscoder
         byte[] wav,
         string format,
         double gainDb,
+        double pitchSemitones,
+        bool normalize,
         CancellationToken cancellationToken)
     {
         format = AudioFormats.Normalize(format);
-        var filter = BuildGainFilter(gainDb);
+        var hasGain = Math.Abs(gainDb) >= 0.05;
+        var hasPitch = Math.Abs(pitchSemitones) >= 0.05;
+        var hasFilter = hasGain || hasPitch || normalize;
 
-        if (format == "wav" && filter is null)
+        if (format == "wav" && !hasFilter)
         {
             return wav;
         }
 
         if (!IsAvailable)
         {
+            var needs = new List<string>();
+            if (format != "wav")
+            {
+                needs.Add(format);
+            }
+
+            if (hasPitch)
+            {
+                needs.Add("pitch");
+            }
+
+            if (hasGain)
+            {
+                needs.Add("gain");
+            }
+
+            if (normalize)
+            {
+                needs.Add("loudness normalization");
+            }
+
             throw new FfmpegUnavailableException(
-                $"ffmpeg is required for {format} or gain; the bundled copy is missing " +
-                "and no ffmpeg was found on PATH. Reinstall winTTSas or set FfmpegPath.");
+                $"ffmpeg is required for {string.Join(", ", needs)}; the bundled copy is " +
+                "missing and no ffmpeg was found on PATH. Reinstall winTTSas or set FfmpegPath.");
         }
+
+        var filter = BuildFilter(gainDb, pitchSemitones, normalize);
 
         // A WAV written to a pipe has placeholder RIFF/data sizes because ffmpeg
         // cannot seek back to patch them. Write WAV to a temp file so every
@@ -142,15 +171,113 @@ public sealed class FfmpegTranscoder
         }
     }
 
-    private static string? BuildGainFilter(double gainDb)
+    private string? BuildFilter(double gainDb, double pitchSemitones, bool normalize)
     {
-        if (Math.Abs(gainDb) < 0.05)
+        var parts = new List<string>(4);
+
+        if (Math.Abs(pitchSemitones) >= 0.05)
         {
-            return null;
+            RequireFilter("rubberband", "pitch");
+            var ratio = Math.Pow(2, pitchSemitones / 12.0)
+                .ToString("0.######", CultureInfo.InvariantCulture);
+            parts.Add($"rubberband=pitch={ratio}:pitchq=quality:formant=preserved");
         }
 
-        var db = gainDb.ToString("0.###", CultureInfo.InvariantCulture);
-        return $"volume={db}dB,alimiter=limit=0.84:level=false:latency=true";
+        if (normalize)
+        {
+            RequireFilter("loudnorm", "loudness normalization");
+            parts.Add("loudnorm=I=-16:TP=-1.5:LRA=11");
+        }
+
+        if (Math.Abs(gainDb) >= 0.05)
+        {
+            var db = gainDb.ToString("0.###", CultureInfo.InvariantCulture);
+            parts.Add($"volume={db}dB");
+            parts.Add("alimiter=limit=0.84:level=false:latency=true");
+        }
+
+        return parts.Count == 0 ? null : string.Join(",", parts);
+    }
+
+    /// <summary>
+    /// The bundled ffmpeg is the GPL "full" build, which ships rubberband and
+    /// loudnorm. A hand-installed ffmpeg from PATH may not, so name the missing
+    /// filter instead of surfacing ffmpeg's own error.
+    /// </summary>
+    private void RequireFilter(string filter, string feature)
+    {
+        if (HasFilter(filter))
+        {
+            return;
+        }
+
+        throw new FfmpegUnavailableException(
+            $"ffmpeg has no {filter} filter, which {feature} needs. " +
+            "Use the bundled full ffmpeg build or point FfmpegPath at one.");
+    }
+
+    private bool HasFilter(string name)
+    {
+        HashSet<string> filters;
+        lock (_filterLock)
+        {
+            _filters ??= ProbeFilters();
+            filters = _filters;
+        }
+
+        return filters.Contains(name);
+    }
+
+    private HashSet<string> ProbeFilters()
+    {
+        var filters = new HashSet<string>(StringComparer.Ordinal);
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _path,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-hide_banner");
+            startInfo.ArgumentList.Add("-filters");
+
+            using var process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return filters;
+            }
+
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            var output = process.StandardOutput.ReadToEnd();
+
+            if (!process.WaitForExit(5000))
+            {
+                process.Kill(entireProcessTree: true);
+                return filters;
+            }
+
+            _ = stderrTask;
+
+            foreach (var line in output.Split('\n'))
+            {
+                // " T.. rubberband  A->A  Apply time-stretching and pitch-shifting."
+                var tokens = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (tokens.Length >= 3 && tokens[0].Contains('.'))
+                {
+                    filters.Add(tokens[1]);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _log?.LogWarning(ex, "could not probe ffmpeg filters");
+        }
+
+        return filters;
     }
 
     private IEnumerable<string> BuildArguments(

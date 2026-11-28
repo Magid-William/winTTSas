@@ -10,6 +10,8 @@ internal sealed class SpeechUrlValues
     public string? Format { get; set; }
     public double? Speed { get; set; }
     public double? GainDb { get; set; }
+    public double? Pitch { get; set; }
+    public bool? Normalize { get; set; }
     public bool? Sanitize { get; set; }
 }
 
@@ -21,13 +23,15 @@ internal sealed record SpeechUrlError(
 internal static class SpeechUrl
 {
     public const string AcceptedKeys =
-        "voice, speed, gain_db (gain, gaindb, volume), response_format (format), input (text), sanitize, model";
+        "voice, speed, pitch, gain_db (gain, gaindb, volume), response_format (format), input (text), sanitize, normalize, model";
 
     private enum Field
     {
         Voice,
         Speed,
         Gain,
+        Pitch,
+        Normalize,
         Format,
         Input,
         Sanitize,
@@ -150,6 +154,8 @@ internal static class SpeechUrl
         Field.Format => values.Format is null,
         Field.Speed => values.Speed is null,
         Field.Gain => values.GainDb is null,
+        Field.Pitch => values.Pitch is null,
+        Field.Normalize => values.Normalize is null,
         Field.Sanitize => values.Sanitize is null,
         _ => false
     };
@@ -224,6 +230,18 @@ internal static class SpeechUrl
                 values.Sanitize = sanitize;
                 return true;
 
+            case Field.Normalize:
+                if (!TryParseBool(value, out var normalize))
+                {
+                    error = new SpeechUrlError(
+                        "normalize must be true or false.",
+                        "normalize");
+                    return false;
+                }
+
+                values.Normalize = normalize;
+                return true;
+
             case Field.Speed:
                 if (!TryParseNumber(value, out var speed))
                 {
@@ -234,6 +252,18 @@ internal static class SpeechUrl
                 }
 
                 values.Speed = speed;
+                return true;
+
+            case Field.Pitch:
+                if (!TryParseNumber(value, out var pitch))
+                {
+                    error = new SpeechUrlError(
+                        "pitch must be a number between -12 and +12 semitones.",
+                        "pitch");
+                    return false;
+                }
+
+                values.Pitch = pitch;
                 return true;
 
             case Field.Gain:
@@ -266,6 +296,12 @@ internal static class SpeechUrl
                 return true;
             case "gain_db" or "gaindb" or "gain" or "volume":
                 field = Field.Gain;
+                return true;
+            case "pitch":
+                field = Field.Pitch;
+                return true;
+            case "normalize" or "loudnorm":
+                field = Field.Normalize;
                 return true;
             case "response_format" or "format":
                 field = Field.Format;

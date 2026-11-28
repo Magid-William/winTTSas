@@ -52,6 +52,8 @@ public static class CliApp
                 "select" => await SelectAsync(rest, cancellationToken),
                 "volume" or "gain" => await VolumeAsync(rest, cancellationToken),
                 "speed" => await SpeedAsync(rest, cancellationToken),
+                "pitch" => await PitchAsync(rest, cancellationToken),
+                "normalize" or "loudnorm" => await NormalizeAsync(rest, cancellationToken),
                 "port" => await PortAsync(rest, cancellationToken),
                 "format" => await FormatAsync(rest, cancellationToken),
                 "sanitize" => await SanitizeAsync(rest, cancellationToken),
@@ -85,6 +87,8 @@ Usage:
   winTTSas list [--json]
   winTTSas select <index|name|slug>
   winTTSas speed [0.25-4.0]
+  winTTSas pitch [-12..+12]
+  winTTSas normalize [on|off]
   winTTSas port [port]
   winTTSas format [mp3|wav|opus|aac|flac|pcm]
   winTTSas sanitize [on|off|--test <text>]
@@ -234,6 +238,8 @@ Notes:
         int? deviceIndex = null;
         double? speedOverride = null;
         double? gainOverride = null;
+        double? pitchOverride = null;
+        bool? normalizeOverride = null;
         int? levelOverride = null;
         string? voiceQuery = null;
         string? savePath = null;
@@ -330,6 +336,56 @@ Notes:
                 }
 
                 levelOverride = parsedLevel;
+                continue;
+            }
+
+            if (arg.Equals("--normalize", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("--no-normalize", StringComparison.OrdinalIgnoreCase) ||
+                arg.StartsWith("--normalize=", StringComparison.OrdinalIgnoreCase) ||
+                arg.StartsWith("--no-normalize=", StringComparison.OrdinalIgnoreCase))
+            {
+                var enabledByFlag = arg.StartsWith("--normalize", StringComparison.OrdinalIgnoreCase);
+                string? value = null;
+                var equals = arg.IndexOf('=');
+                if (equals >= 0)
+                {
+                    value = arg[(equals + 1)..];
+                }
+                else if (i + 1 < args.Length && TryParseOnOff(args[i + 1], out _))
+                {
+                    value = args[++i];
+                }
+
+                if (value is null)
+                {
+                    normalizeOverride = enabledByFlag;
+                }
+                else if (!TryParseOnOff(value, out var parsedNormalize))
+                {
+                    return SampleUsageError("--normalize [on|off]");
+                }
+                else
+                {
+                    normalizeOverride = parsedNormalize;
+                }
+
+                continue;
+            }
+
+            if (TryReadOption(args, ref i, "--pitch", out var pitchValue))
+            {
+                if (!double.TryParse(
+                        pitchValue,
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out var parsedPitch) ||
+                    !double.IsFinite(parsedPitch) ||
+                    parsedPitch is < -12.0 or > 12.0)
+                {
+                    return SampleUsageError("--pitch <-12..12>");
+                }
+
+                pitchOverride = Math.Round(parsedPitch, 1);
                 continue;
             }
 
@@ -488,12 +544,16 @@ Notes:
 
         var speed = speedOverride ?? config.DefaultSpeed;
         var gainDb = gainOverride ?? config.GainDb;
+        var pitchSemitones = pitchOverride ?? config.PitchSemitones;
+        var normalize = normalizeOverride ?? config.NormalizeLoudness;
         var level = levelOverride ?? config.Volume;
         var rate = SpeechRate.FromSpeed(speed);
 
         Console.WriteLine($"voice:  {voice.Name}");
         Console.WriteLine($"speed:  {speed:0.00} (SAPI rate {rate})");
         Console.WriteLine($"gain:   {FormatGain(gainDb)} dB");
+        Console.WriteLine($"pitch:  {FormatPitch(pitchSemitones)} semitones");
+        Console.WriteLine($"normal: {(normalize ? "on" : "off")}");
         Console.WriteLine($"level:  {level}");
         if (!string.Equals(text, spoken, StringComparison.Ordinal))
         {
@@ -513,7 +573,10 @@ Notes:
         if (outputPath is not null)
         {
             var saveFormat = outputFormat ?? config.DefaultFormat;
-            var needsFfmpeg = saveFormat != "wav" || Math.Abs(gainDb) >= 0.05;
+            var needsFfmpeg = saveFormat != "wav" ||
+                Math.Abs(gainDb) >= 0.05 ||
+                Math.Abs(pitchSemitones) >= 0.05 ||
+                normalize;
             byte[] audio;
 
             if (!needsFfmpeg)
@@ -526,7 +589,8 @@ Notes:
                 if (!ffmpeg.IsAvailable)
                 {
                     Console.Error.WriteLine(
-                        $"error: ffmpeg is required for {saveFormat} or non-zero gain.");
+                        $"error: ffmpeg is required for {saveFormat} output, pitch, gain, " +
+                        "or loudness normalization.");
                     return 1;
                 }
 
@@ -536,6 +600,8 @@ Notes:
                         wav,
                         saveFormat,
                         gainDb,
+                        pitchSemitones,
+                        normalize,
                         cancellationToken);
                 }
                 catch (Exception ex)
@@ -565,12 +631,15 @@ Notes:
             return 0;
         }
 
-        if (Math.Abs(gainDb) >= 0.05)
+        if (Math.Abs(gainDb) >= 0.05 ||
+            Math.Abs(pitchSemitones) >= 0.05 ||
+            normalize)
         {
             var ffmpeg = new FfmpegTranscoder(config.FfmpegPath, config.Mp3Bitrate);
             if (!ffmpeg.IsAvailable)
             {
-                Console.Error.WriteLine("error: ffmpeg is required for non-zero gain.");
+                Console.Error.WriteLine(
+                    "error: ffmpeg is required for pitch, gain, or loudness normalization.");
                 return 1;
             }
 
@@ -580,11 +649,13 @@ Notes:
                     wav,
                     "wav",
                     gainDb,
+                    pitchSemitones,
+                    normalize,
                     cancellationToken);
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine("error: gain processing failed: " + ex.Message);
+                Console.Error.WriteLine("error: audio processing failed: " + ex.Message);
                 return 1;
             }
         }
@@ -624,6 +695,22 @@ Notes:
 
         value = null;
         return false;
+    }
+
+    private static bool TryParseOnOff(string value, out bool result)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "on" or "true" or "yes" or "1":
+                result = true;
+                return true;
+            case "off" or "false" or "no" or "0":
+                result = false;
+                return true;
+            default:
+                result = false;
+                return false;
+        }
     }
 
     private static int PrintAudioDevices()
@@ -668,6 +755,9 @@ Usage: winTTSas sample [options] [text]
 Options:
   --speed <0.25-4.0>       Override speed for this sample
   --volume <dB>            Override gain in dB (alias: --gain)
+  --pitch <-12..12>        Shift pitch in semitones for this sample
+  --normalize [on|off]     Loudness normalization for this sample
+  --no-normalize           Shorthand for --normalize off
   --level <0-100>          Override SAPI volume
   --voice <index|name|slug>  Select a voice
   --save <path>            Write audio to a file instead of playing (alias: -o)
@@ -921,6 +1011,75 @@ Options:
         if (server is not null)
         {
             Console.WriteLine($"Server speed: {server.Speed:0.00} (SAPI rate {server.Rate}).");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> PitchAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        var config = ConfigStore.Load();
+
+        if (args.Length == 0)
+        {
+            Console.WriteLine(FormatPitch(config.PitchSemitones));
+            return 0;
+        }
+
+        if (!double.TryParse(
+                args[0],
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var pitch) ||
+            !double.IsFinite(pitch) ||
+            pitch is < -12.0 or > 12.0)
+        {
+            Console.Error.WriteLine("pitch must be between -12 and +12 semitones.");
+            return 1;
+        }
+
+        config.PitchSemitones = Math.Round(pitch, 1);
+        ConfigStore.Save(config);
+        var server = await ReloadAsync(cancellationToken);
+
+        Console.WriteLine($"Default pitch set to {FormatPitch(config.PitchSemitones)} semitones.");
+        if (server is not null)
+        {
+            Console.WriteLine($"Server pitch: {FormatPitch(server.PitchSemitones)} semitones.");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> NormalizeAsync(
+        string[] args,
+        CancellationToken cancellationToken)
+    {
+        var config = ConfigStore.Load();
+
+        if (args.Length == 0)
+        {
+            Console.WriteLine(config.NormalizeLoudness ? "on" : "off");
+            return 0;
+        }
+
+        var mode = args[0].Trim().ToLowerInvariant();
+        if (mode is not ("on" or "off"))
+        {
+            Console.Error.WriteLine("usage: winTTSas normalize [on|off]");
+            return 1;
+        }
+
+        config.NormalizeLoudness = mode == "on";
+        ConfigStore.Save(config);
+        var server = await ReloadAsync(cancellationToken);
+
+        Console.WriteLine($"Loudness normalization {mode}.");
+        if (server is not null)
+        {
+            Console.WriteLine($"Server normalization: {(server.Normalize ? "on" : "off")}.");
         }
 
         return 0;
@@ -1348,6 +1507,8 @@ Options:
         Console.WriteLine($"voice:    {status.Voice}");
         Console.WriteLine($"format:   {status.Format}");
         Console.WriteLine($"gain:     {FormatGain(status.GainDb)} dB");
+        Console.WriteLine($"pitch:    {FormatPitch(status.PitchSemitones)} semitones");
+        Console.WriteLine($"normalize: {(status.Normalize ? "on" : "off")}");
         Console.WriteLine($"speed:    {status.Speed:0.00} (SAPI rate {status.Rate})");
         Console.WriteLine($"voices:   {status.Voices} installed ({status.NaturalVoices} natural)");
         Console.WriteLine($"queue:    {status.Queue}/{status.QueueLimit}");
@@ -1384,6 +1545,8 @@ Options:
         Console.WriteLine($"voice:    {voice?.Name ?? "none"}");
         Console.WriteLine($"format:   {config.DefaultFormat}");
         Console.WriteLine($"gain:     {FormatGain(config.GainDb)} dB");
+        Console.WriteLine($"pitch:    {FormatPitch(config.PitchSemitones)} semitones");
+        Console.WriteLine($"normalize: {(config.NormalizeLoudness ? "on" : "off")}");
         Console.WriteLine($"speed:    {config.DefaultSpeed:0.00} (SAPI rate {SpeechRate.FromSpeed(config.DefaultSpeed)})");
         Console.WriteLine($"voices:   {catalog.Voices.Count} installed ({catalog.NaturalCount} natural)");
         Console.WriteLine($"logon:    {(IsLogonEnabled() ? "on" : "off")}");
@@ -1411,6 +1574,9 @@ Options:
 
     private static string FormatGain(double gain) =>
         gain.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture);
+
+    private static string FormatPitch(double semitones) =>
+        semitones.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture);
 
     private static string Truncate(string value, int length) =>
         value.Length <= length ? value : value[..Math.Max(0, length - 1)] + "…";

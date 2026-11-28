@@ -272,7 +272,9 @@ public static class OpenAiVoiceAliases
             ["nova"] = PreferredGender.Female,
             ["shimmer"] = PreferredGender.Female,
             ["coral"] = PreferredGender.Female,
-            ["sage"] = PreferredGender.Female
+            ["sage"] = PreferredGender.Female,
+            ["marin"] = PreferredGender.Female,
+            ["cedar"] = PreferredGender.Male
         };
 
     public static bool TryGet(string name, out PreferredGender gender)

@@ -105,12 +105,35 @@ non-zero CLI default and disables gain for that request.
 `speed` works the same way: the request value overrides `winTTSas speed`; the
 CLI default applies only when `speed` is omitted.
 
+## Pitch and normalization
+
+Pitch is a nonstandard extension, in semitones from -12 to +12 (positive is
+higher). It uses ffmpeg's `rubberband` filter, so the clip keeps its duration
+and speaking rate:
+
+```json
+{
+  "model": "tts-1",
+  "input": "Deeper, please.",
+  "voice": "alloy",
+  "pitch": -4
+}
+```
+
+Set a default with `winTTSas pitch -4`; omit the field to inherit it. `pitch: 0`
+overrides a non-zero default.
+
+Voices differ in level. `"normalize": true` (or `winTTSas normalize on`) runs
+ffmpeg `loudnorm` at -16 LUFS before gain, so `gain_db` still works as a
+relative trim. Both features are applied after the WAV cache, so neither
+invalidates it.
+
 ## Voice names
 
 `voice` accepts:
 
 - OpenAI aliases: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`, `coral`,
-  `verse`, `sage`, `ash`, `ballad`
+  `verse`, `sage`, `ash`, `ballad`, `marin`, `cedar`
 - Azure-style names: `en-GB-RyanNeural`
 - SAPI names: `Microsoft Ryan`
 - Slugs from `/v1/audio/voices`: `ryan`

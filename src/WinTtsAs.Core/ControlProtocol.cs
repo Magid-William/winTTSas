@@ -26,6 +26,8 @@ public sealed record StatusInfo
     public string Voice { get; init; } = "";
     public string Format { get; init; } = "";
     public double GainDb { get; init; }
+    public double PitchSemitones { get; init; }
+    public bool Normalize { get; init; }
     public double Speed { get; init; }
     public int Rate { get; init; }
     public int Voices { get; init; }

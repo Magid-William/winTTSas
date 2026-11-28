@@ -20,7 +20,7 @@ client -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
 > runtime and ffmpeg, binds to `127.0.0.1` only, and keeps config, cache, and
 > logs under `%APPDATA%` / `%LOCALAPPDATA%`.
 
-![The winTTSas test page, with text, voice, format, speed, sanitize, and a synthesized clip](docs/images/test-page.png)
+![The winTTSas test page, with text, voice, format, speed, gain, pitch, sanitize, normalize, and a synthesized clip](docs/images/test-page.png)
 
 ## Highlights
 
@@ -30,6 +30,8 @@ client -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
   Narrator natural voices come through the bundled NaturalVoiceSAPIAdapter.
 - **Six output formats.** `mp3`, `wav`, `opus`, `aac`, `flac`, and `pcm`,
   produced by the bundled ffmpeg.
+- **Tunable delivery.** Speed, pitch in semitones, gain, and optional loudness
+  normalization, per request or as defaults.
 - **Read aloud from anywhere.** `Ctrl+Alt+R` reads the selection, `Ctrl+Alt+C`
   reads the clipboard, and pressing the shortcut again stops.
 - **Friendly to scripts.** `sample` speaks or saves one line, URL routes
@@ -89,7 +91,9 @@ curl.exe -s -X POST http://127.0.0.1:5178/v1/audio/speech `
 |---|---|---|
 | Voice | `winTTSas select` | `voice` |
 | Speed | `winTTSas speed` | `speed` |
+| Pitch | `winTTSas pitch` | `pitch` |
 | Gain | `winTTSas volume` / `gain` | `gain_db` |
+| Normalize | `winTTSas normalize` | `normalize` |
 | Format | `winTTSas format` | `response_format` |
 
 Clients that only accept a URL can put the values in the path:
@@ -139,7 +143,7 @@ key, and error — is in **[docs/reference.md](docs/reference.md)**.
 | I want to… | Go to |
 |---|---|
 | See every command and flag | [CLI reference](docs/reference.md#cli-reference) |
-| Set the default voice, speed, gain, or format | [Defaults](docs/reference.md#defaults) |
+| Set the default voice, speed, pitch, gain, normalization, or format | [Defaults](docs/reference.md#defaults) |
 | Synthesize without a JSON body | [Synthesis from a URL](docs/reference.md#synthesis-from-a-url) |
 | See every endpoint | [HTTP API](docs/reference.md#http-api) |
 | Tune markdown and symbol sanitization | [Sanitization](docs/reference.md#sanitization) |

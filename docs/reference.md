@@ -140,6 +140,8 @@ base URL: http://127.0.0.1:5178/v1
 voice:    Microsoft Andrew
 format:   wav
 gain:     0.0 dB
+pitch:    0.0 semitones
+normalize: off
 speed:    2.00 (SAPI rate 6)
 ...
 ffmpeg:   ffmpeg version 9.1-full_build ...
@@ -256,7 +258,7 @@ running server, so no restart is needed except for `port`.
 | `winTTSas start --foreground` | Run the server in this console |
 | `winTTSas start --quiet` | Start if needed, print only the base URL |
 | `winTTSas stop` | Graceful shutdown, with a force-kill fallback |
-| `winTTSas status` | State, PID, URL, voice, format, speed, hotkeys, queue, logon |
+| `winTTSas status` | State, PID, URL, voice, format, speed, pitch, normalization, hotkeys, queue, logon |
 | `winTTSas status --json` | Same data as JSON |
 
 Examples:
@@ -297,6 +299,8 @@ With no argument each command prints the current value.
 | Command | Range | Notes |
 |---|---|---|
 | `winTTSas speed [factor]` | 0.25-4.0 | Maps to SAPI rate -10..10 |
+| `winTTSas pitch [semitones]` | -12..+12 | Shifts pitch, keeps duration and tempo |
+| `winTTSas normalize [on\|off]` | | Loudness normalization (`loudnorm`) |
 | `winTTSas volume [dB]` | -24..+24 | Alias: `gain`; applied with a limiter |
 | `winTTSas format [format]` | see below | Hot-reloaded, no restart |
 | `winTTSas port [port]` | 1024-65535 | Restarts the server if running |
@@ -304,6 +308,10 @@ With no argument each command prints the current value.
 ```powershell
 winTTSas speed              # print current speed
 winTTSas speed 1.5
+winTTSas pitch              # print current pitch
+winTTSas pitch -2
+winTTSas normalize          # print current normalization
+winTTSas normalize on
 winTTSas volume             # print current gain
 winTTSas volume +3
 winTTSas gain -2
@@ -316,11 +324,21 @@ winTTSas port 5200
 `format` accepts `mp3`, `wav`, `opus`, `aac`, `flac`, or `pcm` (aliases such as
 `ogg`, `m4a`, `wave`, and `s16le` are normalized).
 
+`pitch` is a post-synthesis shift in semitones (positive is higher). It uses
+ffmpeg's `rubberband` filter, so duration and speaking rate do not change and
+formants are preserved. Quality is best within about ±6; beyond that the voice
+starts to sound synthetic.
+
+`normalize` evens out loudness differences between voices with ffmpeg
+`loudnorm` (target -16 LUFS, -1.5 dBTP). It runs before gain, so `volume` still
+works as a relative trim on top.
+
 `volume`/`gain` is a default for all requests, not a system volume control. A
 request can override it with `gain_db`. Gain is applied during transcoding with
 a lookahead limiter (`volume=<dB>,alimiter=limit=0.84`); the cached raw WAV is
 left untouched, so changing gain never invalidates the cache. Non-zero gain
-makes even WAV output go through ffmpeg.
+makes even WAV output go through ffmpeg. Pitch and normalization behave the
+same way: they are applied after the cache, so they never re-synthesize.
 
 ### Global hotkeys
 
@@ -349,9 +367,9 @@ winTTSas clipboard change        # then press the new chord
 winTTSas status                  # shows both chords, errors, and speech state
 ```
 
-Reads use the same synthesis path and defaults as the API (voice, speed, volume,
-sanitization), so `select`, `speed`, and `volume` apply. Audio plays on the
-default output device.
+Reads use the same synthesis path and defaults as the API (voice, speed, pitch,
+gain, normalization, sanitization), so `select`, `speed`, `pitch`, `volume`, and
+`normalize` apply. Audio plays on the default output device.
 
 Pressing a shortcut while speech is playing stops it; pressing it again reads.
 
@@ -373,6 +391,8 @@ and never changes config. Values resolve as `flag -> config -> built-in`.
 |---|---|
 | `--speed <0.25-4.0>` | Speed for this sample |
 | `--volume <dB>` / `--gain <dB>` | Gain in dB for this sample (`+2`, `-3`) |
+| `--pitch <-12..12>` | Pitch shift in semitones for this sample |
+| `--normalize [on\|off]` | Loudness normalization for this sample; `--no-normalize` is `off` |
 | `--level <0-100>` | SAPI volume (not the same as gain) |
 | `--voice <index\|name\|slug>` | Strict voice selection |
 | `--save <path>` | Write to a file instead of playing (alias `-o`) |
@@ -392,6 +412,7 @@ winTTSas sample
 winTTSas sample "Hello from winTTSas."
 winTTSas sample "Faster and louder." --speed 2 --volume +6
 winTTSas sample --voice andrew --speed 1.5 --gain 6 --device 1
+winTTSas sample "Lower and even." --pitch -3 --normalize
 winTTSas sample --level 80 --device 1 "SAPI level test"
 winTTSas sample --speed=2 --gain=+2 "Equals syntax"
 winTTSas sample -- "Text that starts with --dashes"
@@ -413,7 +434,8 @@ machine; use the indices from `sample --devices`.
 `--save` writes `mp3`, `wav`, `opus`, `aac`, `flac`, or `pcm`. The format comes
 from `--format`, otherwise the file extension, otherwise the CLI default.
 Parent directories are created and existing files are overwritten. Rendering
-does not require the server; only ffmpeg is used for non-WAV output or gain.
+does not require the server; only ffmpeg is used for non-WAV output, pitch, gain,
+or loudness normalization.
 
 ### Sanitization
 
@@ -570,7 +592,9 @@ with client.audio.speech.with_streaming_response.create(
   "voice": "alloy",
   "response_format": "mp3",
   "speed": 1.0,
-  "gain_db": 0
+  "gain_db": 0,
+  "pitch": 0,
+  "normalize": false
 }
 ```
 
@@ -668,7 +692,9 @@ fields the URL did not set.
 | `input` | `text` | Text to speak; required |
 | `voice` | | SAPI name, slug, `voiceMap` alias, OpenAI alias, or 1-based index |
 | `speed` | | 0.25-4.0, overriding the CLI default |
+| `pitch` | | -12 to +12 semitones, overriding the CLI default |
 | `gain_db` | `gain`, `gaindb`, `volume` | -24 to +24 dB, overriding the CLI default |
+| `normalize` | `loudnorm` | `on`/`off`, overriding the config default |
 | `response_format` | `format` | `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm`, plus aliases |
 | `sanitize` | | `on`/`off`, overriding the config default |
 | `model` | | Accepted and ignored |
@@ -704,7 +730,9 @@ and errors are identical.
 | `voice` | OpenAI name, Azure-style name, SAPI name, slug, `voiceMap` alias, or 1-based index from `winTTSas list` |
 | `response_format` | `mp3` (default), `wav`, `opus`, `aac`, `flac`, `pcm` |
 | `speed` | 0.25-4.0; overrides the CLI default; CLI speed is used when omitted |
+| `pitch` | -12 to +12 semitones; overrides the CLI pitch. Duration is unchanged |
 | `gain_db` | -24 to +24 dB; overrides the CLI gain. `gainDb` also accepted |
+| `normalize` | Boolean; loudness normalization (`loudnorm`) for this request |
 | `sanitize` | Boolean; overrides the config default for this request |
 | `model` | Accepted and ignored |
 | `instructions` | Accepted and ignored |
@@ -762,8 +790,8 @@ curl.exe -s http://127.0.0.1:5178/doctor
 ```
 
 `/health` returns `ok`, version, PID, port, base URL, default voice, format,
-gain, speed, rate, voice counts, queue, workers, and whether ffmpeg is
-available.
+gain, pitch, normalization, speed, rate, voice counts, queue, workers, and
+whether ffmpeg is available.
 
 `/doctor` returns the config/log paths, adapter status (`ok`, `x64 only`,
 `x86 only`, or `not registered`), the voice list, the ffmpeg version and
@@ -805,6 +833,8 @@ and set a token.
 | `X-WinTTSas-Speed` | Effective speed after request/CLI fallback |
 | `X-WinTTSas-Rate` | SAPI rate -10..10 |
 | `X-WinTTSas-Gain-Db` | Effective gain in dB |
+| `X-WinTTSas-Pitch` | Effective pitch shift in semitones |
+| `X-WinTTSas-Normalize` | `on` or `off` |
 | `X-WinTTSas-Synth-Ms` | Synthesis plus transcode time |
 | `X-WinTTSas-Cache` | `hit` or `miss` |
 
@@ -827,7 +857,7 @@ Errors use OpenAI's JSON shape:
 
 | Status | Meaning |
 |---|---|
-| `400` | Invalid or empty input, bad format, bad speed or gain, bad URL key/value |
+| `400` | Invalid or empty input, bad format, bad speed, gain, or pitch, bad URL key/value |
 | `401` | Token configured but missing or wrong |
 | `414` | URL-based request exceeded the HTTP request-line limit; use the JSON endpoint |
 | `429` | Synthesis queue full; retry shortly (`Retry-After: 2`) |
@@ -849,6 +879,8 @@ CLI; both are equivalent. The server hot-reloads the file on the next request.
   "defaultSpeed": 1.0,
   "defaultFormat": "mp3",
   "gainDb": 0,
+  "pitchSemitones": 0,
+  "normalizeLoudness": false,
   "maxTextLength": 4096,
   "chunkChars": 1200,
   "workers": 2,
@@ -886,6 +918,8 @@ CLI; both are equivalent. The server hot-reloads the file on the next request.
 | `defaultSpeed` | `1.0` | 0.25-4.0 |
 | `defaultFormat` | `mp3` | Default `response_format` |
 | `gainDb` | `0` | Default gain, -24..+24 dB |
+| `pitchSemitones` | `0` | Default pitch shift, -12..+12 semitones |
+| `normalizeLoudness` | `false` | Normalize loudness with ffmpeg `loudnorm` |
 | `maxTextLength` | `4096` | Reject longer input |
 | `chunkChars` | `1200` | Split long text at sentence boundaries |
 | `workers` | `2` | SAPI worker threads, 1-4 |
@@ -974,8 +1008,9 @@ Result: about 460 MB on disk, about 194 MB zipped.
 - Synthesis runs on dedicated STA worker threads (default 2) with a bounded
   queue (default 20). SAPI is never called from Kestrel request threads.
 - Long input is split at sentence boundaries, synthesized as WAV, concatenated,
-  then transcoded once with ffmpeg. Gain is applied during that encode with a
-  true-peak limiter.
+  then transcoded once with ffmpeg. Pitch (`rubberband`), loudness
+  normalization (`loudnorm`), and gain with a true-peak limiter all run in that
+  single encode.
 - Markdown and symbol sanitization runs before normalization and chunking. The
   sanitized text is what enters the cache, so changing the policy changes the
   cache key.
@@ -984,6 +1019,8 @@ Result: about 460 MB on disk, about 194 MB zipped.
   effective setting.
 - Canonical WAVs are cached by text/voice/rate/volume hash in
   `%LOCALAPPDATA%\winTTSas\cache`; logs and cache never contain plaintext text.
+  Pitch, normalization, and gain are applied after the cache, so they never
+  trigger re-synthesis.
 - CLI and server communicate over a per-user named pipe with
   `PipeOptions.CurrentUserOnly`.
 - Global hotkeys use `RegisterHotKey` on a dedicated message-loop thread in the
@@ -996,9 +1033,10 @@ Result: about 460 MB on disk, about 194 MB zipped.
 
 ## Troubleshooting
 
-- **Speed, format, or gain change does not apply**: run `winTTSas status` and
-  check the effective values. Response headers `X-WinTTSas-Speed`,
-  `X-WinTTSas-Rate`, and `X-WinTTSas-Gain-Db` show what a request actually
+- **Speed, format, gain, pitch, or normalization change does not apply**: run
+  `winTTSas status` and check the effective values. Response headers
+  `X-WinTTSas-Speed`, `X-WinTTSas-Rate`, `X-WinTTSas-Gain-Db`,
+  `X-WinTTSas-Pitch`, and `X-WinTTSas-Normalize` show what a request actually
   used. Restart once after upgrading from an older build.
 - **No audio from `sample`**: run `winTTSas sample --devices`. Windows may be
   routing to a Bluetooth headset; pick the speaker index or change the default
@@ -1028,11 +1066,15 @@ Result: about 460 MB on disk, about 194 MB zipped.
 ## Limitations
 
 - No true streaming: audio is returned after synthesis.
-- No SSML or pitch controls in v1.
+- No SSML: per-span prosody, emphasis, and voice switching are not interpreted.
+  Pitch, speed, and loudness are global per request.
 - Text sanitization is on by default; use `sanitize off` or `--raw` to speak raw text.
 - URL-only requests are limited to short text by the HTTP request-line limit;
   send long input to the JSON endpoint.
-- Gain is a default; the nonstandard `gain_db` request field can override it.
+- Gain, pitch, and normalization are defaults; the nonstandard `gain_db`,
+  `pitch`, and `normalize` request fields can override them. Pitch and
+  normalization need ffmpeg filters (`rubberband`, `loudnorm`) that the bundled
+  full build has; a PATH-only minimal ffmpeg may lack them.
 - `mp3`/`opus`/`aac`/`flac`/`pcm` require ffmpeg; releases bundle it under
   `tools\ffmpeg`. Only a dev build without that folder falls back to `PATH`.
 - NaturalVoiceSAPIAdapter is an unsupported shim; Windows updates can break it.

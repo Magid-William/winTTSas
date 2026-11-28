@@ -98,6 +98,8 @@ public static class ServerHost
                             "X-WinTTSas-Speed",
                             "X-WinTTSas-Rate",
                             "X-WinTTSas-Gain-Db",
+                            "X-WinTTSas-Pitch",
+                            "X-WinTTSas-Normalize",
                             "X-WinTTSas-Synth-Ms",
                             "X-WinTTSas-Cache"));
             });
@@ -284,6 +286,8 @@ public static class ServerHost
             voice = speech.DefaultVoice?.Name,
             format = speech.Config.DefaultFormat,
             gainDb = speech.Config.GainDb,
+            pitch = speech.Config.PitchSemitones,
+            normalize = speech.Config.NormalizeLoudness,
             speed = speech.Config.DefaultSpeed,
             rate = SpeechRate.FromSpeed(speech.Config.DefaultSpeed),
             voices = speech.Voices.Count,
@@ -574,6 +578,8 @@ public static class ServerHost
         request.ResponseFormat = values.Format ?? request.ResponseFormat;
         request.Speed = values.Speed ?? request.Speed;
         request.GainDb = values.GainDb ?? request.GainDb;
+        request.Pitch = values.Pitch ?? request.Pitch;
+        request.Normalize = values.Normalize ?? request.Normalize;
 
         if (string.IsNullOrWhiteSpace(request.Input))
         {
@@ -591,6 +597,8 @@ public static class ServerHost
         ResponseFormat = values.Format,
         Speed = values.Speed,
         GainDb = values.GainDb,
+        Pitch = values.Pitch,
+        Normalize = values.Normalize,
         Sanitize = values.Sanitize
     };
 
@@ -669,6 +677,17 @@ public static class ServerHost
             return;
         }
 
+        if (request.Pitch is < -12.0 or > 12.0)
+        {
+            await WriteError(
+                context,
+                StatusCodes.Status400BadRequest,
+                "pitch must be between -12 and +12 semitones.",
+                "invalid_request_error",
+                "pitch");
+            return;
+        }
+
         try
         {
             var result = await speech.SynthesizeAsync(
@@ -677,6 +696,8 @@ public static class ServerHost
                 request.ResponseFormat,
                 request.Speed,
                 requestGain,
+                request.Pitch,
+                request.Normalize,
                 request.Sanitize,
                 cancellationToken);
 
@@ -689,6 +710,10 @@ public static class ServerHost
                 result.Rate.ToString(CultureInfo.InvariantCulture);
             context.Response.Headers["X-WinTTSas-Gain-Db"] =
                 result.GainDb.ToString("0.###", CultureInfo.InvariantCulture);
+            context.Response.Headers["X-WinTTSas-Pitch"] =
+                result.PitchSemitones.ToString("0.###", CultureInfo.InvariantCulture);
+            context.Response.Headers["X-WinTTSas-Normalize"] =
+                result.Normalize ? "on" : "off";
             context.Response.Headers["X-WinTTSas-Synth-Ms"] =
                 result.ElapsedMs.ToString(CultureInfo.InvariantCulture);
             context.Response.Headers["X-WinTTSas-Cache"] =
@@ -698,13 +723,15 @@ public static class ServerHost
             await context.Response.Body.WriteAsync(result.Audio, cancellationToken);
 
             logger.LogInformation(
-                "speech voice={Voice} chars={Chars} format={Format} speed={Speed} rate={Rate} gain_db={GainDb} cache={Cache} ms={Ms} bytes={Bytes}",
+                "speech voice={Voice} chars={Chars} format={Format} speed={Speed} rate={Rate} gain_db={GainDb} pitch={Pitch} normalize={Normalize} cache={Cache} ms={Ms} bytes={Bytes}",
                 result.Voice,
                 request.Input.Length,
                 request.ResponseFormat ?? speech.Config.DefaultFormat,
                 result.Speed,
                 result.Rate,
                 result.GainDb,
+                result.PitchSemitones,
+                result.Normalize,
                 result.CacheHit,
                 result.ElapsedMs,
                 result.Audio.Length);
@@ -862,6 +889,12 @@ public static class ServerHost
 
         [JsonPropertyName("gainDb")]
         public double? GainDbCamel { get; set; }
+
+        [JsonPropertyName("pitch")]
+        public double? Pitch { get; set; }
+
+        [JsonPropertyName("normalize")]
+        public bool? Normalize { get; set; }
 
         [JsonPropertyName("sanitize")]
         public bool? Sanitize { get; set; }

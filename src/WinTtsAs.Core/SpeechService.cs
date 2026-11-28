@@ -10,6 +10,8 @@ public sealed record SpeechResult(
     double Speed,
     int Rate,
     double GainDb,
+    double PitchSemitones,
+    bool Normalize,
     bool CacheHit,
     long ElapsedMs);
 
@@ -67,13 +69,14 @@ public sealed class SpeechService : IAsyncDisposable
             _catalog = catalog;
             _configStamp = GetConfigStamp();
             _log.LogInformation(
-                "reloaded config: {Voices} voices ({Natural} natural), default={Voice}, format={Format}, speed={Speed}, gain={Gain}",
+                "reloaded config: {Voices} voices ({Natural} natural), default={Voice}, format={Format}, speed={Speed}, gain={Gain}, pitch={Pitch}",
                 catalog.Voices.Count,
                 catalog.NaturalCount,
                 catalog.Resolve(config.DefaultVoice, config)?.Name ?? "none",
                 config.DefaultFormat,
                 config.DefaultSpeed,
-                config.GainDb);
+                config.GainDb,
+                config.PitchSemitones);
         }
     }
 
@@ -99,6 +102,8 @@ public sealed class SpeechService : IAsyncDisposable
         string? formatRequest,
         double? speedRequest,
         double? gainDbRequest,
+        double? pitchSemitonesRequest,
+        bool? normalizeRequest,
         bool? sanitizeRequest,
         CancellationToken cancellationToken)
     {
@@ -127,6 +132,10 @@ public sealed class SpeechService : IAsyncDisposable
         var format = AudioFormats.Normalize(formatRequest, config.DefaultFormat);
         var speed = Math.Clamp(speedRequest ?? config.DefaultSpeed, 0.25, 4.0);
         var gainDb = Math.Clamp(gainDbRequest ?? config.GainDb, -24.0, 24.0);
+        var pitchSemitones = Math.Round(
+            Math.Clamp(pitchSemitonesRequest ?? config.PitchSemitones, -12.0, 12.0),
+            1);
+        var normalize = normalizeRequest ?? config.NormalizeLoudness;
         var rate = SpeechRate.FromSpeed(speed);
         var cacheKey = AudioCache.Key(normalized, voice.Name, rate, config.Volume);
 
@@ -158,6 +167,8 @@ public sealed class SpeechService : IAsyncDisposable
             wav,
             format,
             gainDb,
+            pitchSemitones,
+            normalize,
             cancellationToken);
         stopwatch.Stop();
 
@@ -168,6 +179,8 @@ public sealed class SpeechService : IAsyncDisposable
             speed,
             rate,
             gainDb,
+            pitchSemitones,
+            normalize,
             cacheHit,
             stopwatch.ElapsedMilliseconds);
     }
@@ -190,6 +203,8 @@ public sealed class SpeechService : IAsyncDisposable
             Voice = voice?.Name ?? "",
             Format = config.DefaultFormat,
             GainDb = config.GainDb,
+            PitchSemitones = config.PitchSemitones,
+            Normalize = config.NormalizeLoudness,
             Speed = config.DefaultSpeed,
             Rate = SpeechRate.FromSpeed(config.DefaultSpeed),
             Voices = catalog.Voices.Count,
@@ -233,11 +248,12 @@ public sealed class SpeechService : IAsyncDisposable
                 _catalog = catalog;
                 _configStamp = stamp;
                 _log.LogInformation(
-                    "hot-reloaded config: default={Voice}, format={Format}, speed={Speed}, gain={Gain}",
+                    "hot-reloaded config: default={Voice}, format={Format}, speed={Speed}, gain={Gain}, pitch={Pitch}",
                     catalog.Resolve(config.DefaultVoice, config)?.Name ?? "none",
                     config.DefaultFormat,
                     config.DefaultSpeed,
-                    config.GainDb);
+                    config.GainDb,
+                    config.PitchSemitones);
 
                 ConfigReloaded?.Invoke(config);
             }

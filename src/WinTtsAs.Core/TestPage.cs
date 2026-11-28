@@ -55,6 +55,17 @@ public static class TestPage
     </div>
   </div>
 
+  <div class="row">
+    <div>
+      <label for="gain">Gain (dB)</label>
+      <input id="gain" type="number" min="-24" max="24" step="1" value="0">
+    </div>
+    <div>
+      <label for="pitch">Pitch (semitones)</label>
+      <input id="pitch" type="number" min="-12" max="12" step="1" value="0">
+    </div>
+  </div>
+
   <label for="key">API key (only if a token is configured)</label>
   <input id="key" type="password" autocomplete="off" placeholder="local">
 
@@ -63,6 +74,12 @@ public static class TestPage
     Sanitize
   </label>
   <p class="hint">Strip Markdown, URLs, and symbols before speaking.</p>
+
+  <label class="check" for="normalize">
+    <input id="normalize" type="checkbox">
+    Normalize loudness
+  </label>
+  <p class="hint">Even out level differences between voices (ffmpeg loudnorm).</p>
 
   <div>
     <button id="speak">Synthesize</button>
@@ -87,6 +104,21 @@ public static class TestPage
       }
     }
 
+    async function loadDefaults() {
+      try {
+        const response = await fetch('/health');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (typeof data.speed === 'number') $('speed').value = data.speed;
+        if (typeof data.gainDb === 'number') $('gain').value = data.gainDb;
+        if (typeof data.pitch === 'number') $('pitch').value = data.pitch;
+        if (data.format) $('format').value = data.format;
+        $('normalize').checked = !!data.normalize;
+      } catch {
+        // keep the built-in defaults
+      }
+    }
+
     async function speak() {
       const key = $('key').value.trim();
       const body = {
@@ -95,6 +127,9 @@ public static class TestPage
         voice: $('voice').value,
         response_format: $('format').value,
         speed: parseFloat($('speed').value) || 1,
+        gain_db: parseFloat($('gain').value) || 0,
+        pitch: parseFloat($('pitch').value) || 0,
+        normalize: $('normalize').checked,
         sanitize: $('sanitize').checked
       };
       const headers = { 'Content-Type': 'application/json' };
@@ -127,6 +162,7 @@ public static class TestPage
 
     $('speak').addEventListener('click', speak);
     loadVoices();
+    loadDefaults();
   </script>
 </body>
 </html>

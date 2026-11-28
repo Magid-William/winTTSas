@@ -12,6 +12,8 @@ public sealed class AppConfig
     public double DefaultSpeed { get; set; } = 1.0;
     public string DefaultFormat { get; set; } = "mp3";
     public double GainDb { get; set; } = 0;
+    public double PitchSemitones { get; set; } = 0;
+    public bool NormalizeLoudness { get; set; } = false;
     public int MaxTextLength { get; set; } = 4096;
     public int ChunkChars { get; set; } = 1200;
     public int Workers { get; set; } = 2;
@@ -52,7 +54,13 @@ public sealed class AppConfig
             DefaultSpeed = 1.0;
         }
 
+        if (!double.IsFinite(PitchSemitones))
+        {
+            PitchSemitones = 0;
+        }
+
         GainDb = Math.Round(Math.Clamp(GainDb, -24.0, 24.0), 1);
+        PitchSemitones = Math.Round(Math.Clamp(PitchSemitones, -12.0, 12.0), 1);
         DefaultSpeed = Math.Clamp(DefaultSpeed, 0.25, 4.0);
         MaxTextLength = Math.Clamp(MaxTextLength, 1, 16_000);
         ChunkChars = Math.Clamp(ChunkChars, 200, Math.Max(200, MaxTextLength));

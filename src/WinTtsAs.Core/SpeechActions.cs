@@ -84,6 +84,8 @@ public sealed class SpeechActions : IDisposable
                     formatRequest: "wav",
                     speedRequest: null,
                     gainDbRequest: null,
+                    pitchSemitonesRequest: null,
+                    normalizeRequest: null,
                     sanitizeRequest: null,
                     cts.Token)
                 .ConfigureAwait(false);
