@@ -16,9 +16,10 @@ client -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
                                             -> NaturalVoiceSAPIAdapter -> Narrator
 ```
 
-> **No installer, no admin prompt, no network.** A release bundles the .NET 8
-> runtime and ffmpeg, binds to `127.0.0.1` only, and keeps config, cache, and
-> logs under `%APPDATA%` / `%LOCALAPPDATA%`.
+> **No installer required, no network.** A release bundles the .NET 8 runtime
+> and ffmpeg, binds to `127.0.0.1` only, and keeps config, cache, and logs under
+> `%APPDATA%` / `%LOCALAPPDATA%`. One optional command puts it on `PATH` and sets
+> up everything else; only the optional natural-voice adapter asks for admin.
 
 ![The winTTSas test page, with text, voice, format, speed, gain, pitch, sanitize, normalize, and a synthesized clip](docs/images/test-page.png)
 
@@ -38,33 +39,44 @@ client -> POST /v1/audio/speech -> winTTSas -> System.Speech (SAPI5)
   synthesize without a JSON body, and `status --json` reports the real values.
 - **Nothing to babysit.** One hidden background process, optional start at
   login, config hot-reload, and a local WAV cache.
+- **Installed by one command.** `winTTSas setup` copies the app to
+  `%LOCALAPPDATA%\Programs\winTTSas`, adds it to `PATH`, registers natural
+  voices, and creates the Start Menu and Apps & Features entries.
 
 ## Quick start
 
-1. **Extract the release** anywhere, for example `C:\Tools\winTTSas`. There is
-   no installer; run `winTTSas.exe` from the folder or add it to `PATH`.
+1. **Extract the release** anywhere, for example your Downloads folder.
 
-2. **Start the server.**
-
-   ```powershell
-   .\winTTSas.exe start
-   ```
-
-   It prints the effective settings and listens on `http://127.0.0.1:5178`.
-   `start` is idempotent, `stop` shuts it down, and
-   `start --foreground` keeps it in the console. `winTTSas logon on` starts the
-   hidden server at login instead.
-
-3. **Hear it.**
+2. **Run the setup wizard** from that folder:
 
    ```powershell
-   .\winTTSas.exe sample "Hello from winTTSas."
+   .\winTTSas.exe setup
    ```
 
-   Silent? `.\winTTSas.exe sample --devices` lists the outputs; pass one with
+   It copies the app to `%LOCALAPPDATA%\Programs\winTTSas`, adds that folder to
+   your user `PATH`, registers the natural voice adapter (one UAC prompt),
+   enables start at login, lets you pick a default voice, and creates the Start
+   Menu and Apps & Features entries. Pressing Enter at every prompt is fine.
+
+   To keep the app where it is instead, use `.\winTTSas.exe setup --portable`.
+   You can also skip setup entirely and run `winTTSas.exe` from the folder.
+
+3. **Open a new terminal.** Existing terminals keep their old `PATH`:
+
+   ```powershell
+   winTTSas status
+   ```
+
+4. **Hear it.**
+
+   ```powershell
+   winTTSas sample "Hello from winTTSas."
+   ```
+
+   Silent? `winTTSas sample --devices` lists the outputs; pass one with
    `--device <n>`.
 
-4. **Open the test page:** <http://127.0.0.1:5178/>. This also works:
+5. **Open the test page:** <http://127.0.0.1:5178/>. This also works:
    <http://127.0.0.1:5178/v1/audio/speech/voice/1/speed/1.2/text/Hello%20from%20winTTSas>.
 
 ## Use it from a client
@@ -125,8 +137,9 @@ non-elevated windows. Details: [global hotkeys](docs/reference.md#global-hotkeys
 ## Natural voices (optional)
 
 Classic SAPI voices work immediately. For Narrator voices, install them in
-**Settings > Accessibility > Narrator > Add natural voices**, then run once from
-an elevated PowerShell:
+**Settings > Accessibility > Narrator > Add natural voices**. `winTTSas setup`
+registers the adapter for you; to do it later, or again after moving the app,
+run once from an elevated PowerShell:
 
 ```powershell
 .\scripts\install-adapter.ps1

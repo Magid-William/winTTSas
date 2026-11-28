@@ -14,12 +14,15 @@ Working v0.5.0. Tested on Windows 11 with `Microsoft Andrew (Natural HD)`.
 
 - [Installation and setup](#installation-and-setup)
   - [Release files](#release-files)
+  - [Install with the wizard](#install-with-the-wizard)
+  - [Manual setup](#manual-setup)
   - [Natural voices (optional)](#natural-voices-optional)
   - [Start the server](#start-the-server)
   - [Verify the install](#verify-the-install)
   - [Start at login](#start-at-login)
 - [Quick start](#quick-start)
 - [CLI reference](#cli-reference)
+  - [Setup](#setup)
   - [Lifecycle](#lifecycle)
   - [Voices](#voices)
   - [Defaults](#defaults)
@@ -75,10 +78,75 @@ winTTSas\
   docs\reference.md
 ```
 
-There is no installer. The app writes its config, cache, and logs under
-`%APPDATA%` and `%LOCALAPPDATA%`, so the folder stays portable.
+No installer is required. The app writes its config, cache, and logs under
+`%APPDATA%` and `%LOCALAPPDATA%`, so the program folder stays self-contained.
 
-Two optional conveniences:
+The next two sections are optional: run the wizard to get the `winTTSas`
+command on `PATH`, or keep the folder portable and call the executable directly.
+
+### Install with the wizard
+
+The release is portable, so nothing has to be installed. The wizard is the
+convenient path: it puts `winTTSas` on your user `PATH` so the command works in
+any new terminal, and it wires up the parts that are easy to forget.
+
+```powershell
+cd C:\Tools\winTTSas   # or wherever you extracted the zip
+.\winTTSas.exe setup
+```
+
+It walks through these steps, each with a default you can accept with Enter:
+
+1. **Install folder.** Defaults to `%LOCALAPPDATA%\Programs\winTTSas`. The
+   release is copied there, so the extracted zip can be deleted afterwards.
+2. **Natural voices.** Runs `scripts\install-adapter.ps1` with one UAC prompt.
+   Answer `n` to keep classic SAPI voices only.
+3. **PATH.** Appends the install folder to `HKCU\Environment\Path` (no admin)
+   and verifies from a child process that `winTTSas.exe` resolves.
+4. **Start at login.** Writes the hidden server to `HKCU\...\Run` and starts it.
+   An existing logon entry is rewritten to the new folder.
+5. **Default voice.** Shows the voice table and prompts once.
+6. **Test speech.** Speaks a sentence. Skip it if the machine is muted.
+7. **Shortcuts.** Adds a Start Menu shortcut and an Apps & Features entry whose
+   Uninstall button runs `winTTSas uninstall`.
+
+The wizard is idempotent: running it again upgrades the installed copy, restarts
+the server, and never duplicates the `PATH` entry. Config, cache, and logs live
+under `%APPDATA%` and `%LOCALAPPDATA%`, so they survive upgrades.
+
+Non-interactive use:
+
+```powershell
+.\winTTSas.exe setup --yes
+.\winTTSas.exe setup --yes --dir D:\Tools\winTTSas
+.\winTTSas.exe setup --yes --portable
+```
+
+| Flag | Effect |
+|---|---|
+| `--yes` | Accept every default; no prompts and no test speech |
+| `--dir <path>` | Install folder (default `%LOCALAPPDATA%\Programs\winTTSas`) |
+| `--portable` | Keep the files where they are instead of copying |
+| `--skip-adapter` | Do not touch natural voice registration |
+| `--no-logon` | Do not start at login |
+| `--skip-path` | Do not change `PATH` |
+| `--skip-voice` | Keep the current default voice |
+| `--skip-test` | Do not speak a test sentence |
+| `--no-start` | Do not start the server now |
+| `--open` | Open the test page at the end |
+
+If you move the folder later, run `setup` again: the adapter stores absolute
+paths, and the PATH entry, logon command, and shortcut are rewritten.
+
+> Open a **new** terminal after setup. The one you ran it from keeps its old
+> `PATH`; the final summary prints the base URL and the commands to try.
+
+> The executables are unsigned. SmartScreen may warn on first run; choose
+> **More info > Run anyway**.
+
+### Manual setup
+
+Without the wizard, run the executable by full path or add the folder yourself:
 
 ```powershell
 # Add the folder to this PowerShell session only
@@ -88,8 +156,10 @@ $env:Path += ";C:\Tools\winTTSas"
 C:\Tools\winTTSas\winTTSas.exe status
 ```
 
-> The executables are unsigned. SmartScreen may warn on first run; choose
-> **More info > Run anyway**.
+To make the command permanent by hand, add the folder to the user `PATH` in
+**Settings > System > About > Advanced system settings > Environment
+Variables**, then open a new terminal. The wizard edits
+`HKCU\Environment\Path` directly and is the recommended route.
 
 ### Natural voices (optional)
 
@@ -125,10 +195,13 @@ app. Removing it breaks natural voices for every SAPI app that uses the adapter.
 
 ### Start the server
 
+After the wizard, the command is on `PATH`:
+
 ```powershell
-cd C:\Tools\winTTSas
-.\winTTSas.exe start
+winTTSas start
 ```
+
+Without the wizard, `cd` into the folder and run `.\winTTSas.exe start`.
 
 `start` launches the hidden server, waits for it to become ready, and prints
 the effective settings:
@@ -174,14 +247,17 @@ Stop it:
 
 ```powershell
 # Show what is running
-.\winTTSas.exe status
+winTTSas status
+
+# Confirm the command resolves in a new terminal
+where winTTSas
 
 # Speak a sentence on the default output device
-.\winTTSas.exe sample "Hello from winTTSas."
+winTTSas sample "Hello from winTTSas."
 
 # List output devices, then target one explicitly
-.\winTTSas.exe sample --devices
-.\winTTSas.exe sample --device 1 "Hello on the speakers."
+winTTSas sample --devices
+winTTSas sample --device 1 "Hello on the speakers."
 ```
 
 If `sample` is silent, Windows is probably routing to a Bluetooth headset and
@@ -249,6 +325,24 @@ A browser test form is at <http://127.0.0.1:5178/>.
 Run `winTTSas help` for the built-in summary, and `winTTSas version` for the
 version. Commands that change settings write `config.json` and hot-reload a
 running server, so no restart is needed except for `port`.
+
+### Setup
+
+```powershell
+winTTSas setup                 # guided install
+winTTSas setup --yes           # defaults, no prompts
+winTTSas install               # alias
+```
+
+The wizard copies the release to `%LOCALAPPDATA%\Programs\winTTSas` by default,
+adds that folder to the user `PATH`, registers natural voices, enables logon
+startup, picks a default voice, and creates the Start Menu and Apps & Features
+entries. See [install with the wizard](#install-with-the-wizard) for the full
+walkthrough and the flag table.
+
+`setup` refuses to run without `--yes` when standard input is redirected, so
+scripts must pass it explicitly. `--portable` keeps the current folder instead
+of copying, and `--dir <path>` chooses a different install folder.
 
 ### Lifecycle
 
@@ -496,13 +590,16 @@ winTTSas logon
 winTTSas logon off
 ```
 
-`uninstall` stops the server, removes the logon entry, and deletes config,
-cache, and logs. It keeps the adapter registration by default.
+`uninstall` stops the server and removes the logon entry, the user `PATH` entry,
+the Start Menu shortcut, the Apps & Features entry, and the install marker. It
+then deletes config, cache, and logs, and finally the program folder. The
+adapter registration is kept by default.
 
 ```powershell
 winTTSas uninstall                  # interactive confirmation
 winTTSas uninstall --yes            # non-interactive
 winTTSas uninstall --yes --keep-data
+winTTSas uninstall --yes --keep-files
 winTTSas uninstall --yes --remove-adapter
 ```
 
@@ -510,9 +607,14 @@ winTTSas uninstall --yes --remove-adapter
 |---|---|
 | `--yes` | Do not prompt |
 | `--keep-data` | Keep config, cache, and logs |
+| `--keep-files` | Keep the program folder |
 | `--remove-adapter` | Unregister the natural voice adapter |
 
-Afterwards you can delete the app folder.
+The uninstaller uses the `InstallDir` that `setup` wrote under
+`HKCU\Software\winTTSas`. When the running executable lives inside that folder,
+Windows cannot delete it; removal is scheduled for just after the process exits.
+Folders that are a drive root, a standard user folder, or that do not contain
+`winTTSas.exe` are never deleted.
 
 ### JSON output
 

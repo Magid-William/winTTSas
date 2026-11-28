@@ -8,7 +8,7 @@ using WinTtsAs.Core;
 
 namespace WinTtsAs.Cli;
 
-public static class CliApp
+public static partial class CliApp
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValueName = "winTTSas";
@@ -61,6 +61,7 @@ public static class CliApp
                 "selectedtext" or "selection" => await HotkeyCommandAsync(HotkeyTarget.SelectedText, rest, cancellationToken),
                 "clipboard" => await HotkeyCommandAsync(HotkeyTarget.Clipboard, rest, cancellationToken),
                 "logon" => await LogonAsync(rest, cancellationToken),
+                "setup" or "install" => await SetupAsync(rest, cancellationToken),
                 "uninstall" => await UninstallAsync(rest, cancellationToken),
                 _ => Unknown(command)
             };
@@ -96,7 +97,10 @@ Usage:
   winTTSas selectedText [on|off|change [shortcut]]
   winTTSas clipboard [on|off|change [shortcut]]
   winTTSas logon on|off
-  winTTSas uninstall [--yes] [--keep-data] [--remove-adapter]
+  winTTSas setup [--yes] [--dir <path>] [--portable]
+                 [--skip-adapter] [--no-logon] [--skip-path]
+                 [--skip-voice] [--skip-test] [--no-start] [--open]
+  winTTSas uninstall [--yes] [--keep-data] [--keep-files] [--remove-adapter]
   winTTSas help
 
 OpenAI clients:
@@ -110,6 +114,9 @@ Notes:
   - format applies live; port restarts the server.
   - logon uses HKCU Run and starts the hidden server at login.
   - selectedText and clipboard set global read-aloud hotkeys on the server.
+  - setup copies the app to %LOCALAPPDATA%\Programs\winTTSas, adds it to PATH,
+    registers natural voices, enables logon, and adds shortcuts. --portable
+    keeps the current folder instead of copying.
 """);
         return 0;
     }
@@ -129,7 +136,8 @@ Notes:
 
     private static async Task<int> StartAsync(
         string[] args,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? serverExeOverride = null)
     {
         var foreground = HasFlag(args, "--foreground");
         var quiet = HasFlag(args, "--quiet");
@@ -157,7 +165,7 @@ Notes:
             return 0;
         }
 
-        var serverExe = ResolveServerExe();
+        var serverExe = serverExeOverride ?? ResolveServerExe();
         if (!File.Exists(serverExe))
         {
             Console.Error.WriteLine($"server executable not found: {serverExe}");
@@ -1388,13 +1396,14 @@ Options:
 
     private static async Task<int> LogonAsync(
         string[] args,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? serverExeOverride = null)
     {
         var sub = args.Length > 0 ? args[0].ToLowerInvariant() : "";
 
         if (sub == "on")
         {
-            var serverExe = ResolveServerExe();
+            var serverExe = serverExeOverride ?? ResolveServerExe();
             if (!File.Exists(serverExe))
             {
                 Console.Error.WriteLine($"server executable not found: {serverExe}");
@@ -1407,7 +1416,7 @@ Options:
 
             if (await ControlPipeClient.GetStatusAsync(300, cancellationToken) is null)
             {
-                return await StartAsync(["--quiet"], cancellationToken);
+                return await StartAsync(["--quiet"], cancellationToken, serverExe);
             }
 
             return 0;
@@ -1431,7 +1440,16 @@ Options:
     {
         var yes = HasFlag(args, "--yes");
         var keepData = HasFlag(args, "--keep-data");
+        var keepFiles = HasFlag(args, "--keep-files");
         var removeAdapter = HasFlag(args, "--remove-adapter");
+
+        var installDir = ShellIntegration.ReadInstallDir();
+        if (string.IsNullOrWhiteSpace(installDir))
+        {
+            installDir = AppContext.BaseDirectory;
+        }
+
+        installDir = UserEnvironment.NormalizeDirectory(installDir);
 
         if (!yes)
         {
@@ -1441,7 +1459,18 @@ Options:
                 return 1;
             }
 
-            Console.Write("Stop server, remove logon, and delete config/cache/logs? [y/N] ");
+            var parts = new List<string> { "stop the server", "remove the PATH entry, logon, and shortcuts" };
+            if (!keepData)
+            {
+                parts.Add("delete config/cache/logs");
+            }
+
+            if (!keepFiles)
+            {
+                parts.Add($"delete {installDir}");
+            }
+
+            Console.Write($"This will {string.Join(", ", parts)}. Continue? [y/N] ");
             var answer = Console.ReadLine()?.Trim();
             if (!string.Equals(answer, "y", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(answer, "yes", StringComparison.OrdinalIgnoreCase))
@@ -1454,6 +1483,14 @@ Options:
         await StopAsync(cancellationToken);
         RemoveLogonEntry();
 
+        var pathUpdate = UserEnvironment.RemoveFromUserPath(installDir);
+        Console.WriteLine(pathUpdate.Changed
+            ? "Removed the PATH entry."
+            : "No PATH entry pointed at this folder.");
+
+        ShellIntegration.Uninstall();
+        Console.WriteLine("Removed the Start Menu shortcut and Apps & Features entry.");
+
         if (!keepData)
         {
             DeleteDirectory(AppPaths.ConfigDir);
@@ -1465,8 +1502,112 @@ Options:
             UnregisterAdapter();
         }
 
-        Console.WriteLine("winTTSas uninstalled. You can delete this folder.");
+        if (keepFiles)
+        {
+            Console.WriteLine("Kept the program files.");
+        }
+        else if (TryDeleteInstallDir(installDir, out var reason, out var inUse))
+        {
+            Console.WriteLine($"Deleted {installDir}.");
+        }
+        else if (inUse)
+        {
+            Console.WriteLine("Folder is in use; removing it after this process exits.");
+            ScheduleDeferredDelete(installDir);
+        }
+        else
+        {
+            Console.WriteLine($"Could not delete {installDir}: {reason}");
+            Console.WriteLine("Remove it manually when convenient.");
+        }
+
+        Console.WriteLine("winTTSas uninstalled.");
         return 0;
+    }
+
+    private static bool TryDeleteInstallDir(string directory, out string reason, out bool inUse)
+    {
+        reason = "";
+        inUse = false;
+        var full = UserEnvironment.NormalizeDirectory(directory);
+        var root = Path.GetPathRoot(full);
+
+        if (string.IsNullOrWhiteSpace(full) ||
+            (!string.IsNullOrEmpty(root) &&
+             string.Equals(
+                 full.TrimEnd(Path.DirectorySeparatorChar),
+                 root.TrimEnd(Path.DirectorySeparatorChar),
+                 StringComparison.OrdinalIgnoreCase)))
+        {
+            reason = "refusing to delete a drive root";
+            return false;
+        }
+
+        var protectedDirs = new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+        };
+
+        if (protectedDirs.Any(path =>
+                !string.IsNullOrWhiteSpace(path) &&
+                string.Equals(
+                    full,
+                    UserEnvironment.NormalizeDirectory(path),
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            reason = "refusing to delete a protected folder";
+            return false;
+        }
+
+        if (!File.Exists(Path.Combine(full, "winTTSas.exe")))
+        {
+            reason = "winTTSas.exe was not found there";
+            return false;
+        }
+
+        try
+        {
+            Directory.Delete(full, recursive: true);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            reason = ex.Message;
+            inUse = ex is UnauthorizedAccessException or IOException;
+            return false;
+        }
+    }
+
+    private static void ScheduleDeferredDelete(string directory)
+    {
+        try
+        {
+            var literal = directory.Replace("'", "''");
+            var startInfo = new ProcessStartInfo("powershell.exe")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-WindowStyle");
+            startInfo.ArgumentList.Add("Hidden");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add(
+                $"Start-Sleep -Seconds 3; Remove-Item -LiteralPath '{literal}' -Recurse -Force -ErrorAction SilentlyContinue");
+
+            Process.Start(startInfo);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"could not schedule cleanup: {ex.Message}");
+            Console.Error.WriteLine($"delete the folder manually: {directory}");
+        }
     }
 
     private static async Task<StatusInfo?> ReloadAsync(CancellationToken cancellationToken)
